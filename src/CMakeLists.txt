@@ -15,6 +15,7 @@ set(ufofilter_SRCS
     ufo-cut-sinogram-task.c
     ufo-center-of-rotation-task.c
     ufo-concatenate-result-task.c
+    ufo-cone-beam-projection-weight-task.c
     ufo-contrast-task.c
     ufo-correlate-stacks-task.c
     ufo-dfi-sinc-task.c
@@ -109,6 +110,9 @@ set(retrieve_phase_aux_SRCS
 
 set(lamino_backproject_aux_SRCS
     lamino-roi.c)
+
+set(cone_beam_projection_weight_aux_SRCS
+    common/conebeam.c)
 
 file(GLOB ufofilter_KERNELS "kernels/*.cl")
 #}}}
