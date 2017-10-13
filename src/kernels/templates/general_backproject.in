@@ -1,0 +1,59 @@
+#define rotate_x(trig, point) ((cfloat3)(((point).x), mad ((trig).y, (point).y, - ((trig).x * (point).z)), mad ((trig).x, (point).y, ((trig).y * (point).z))))
+#define rotate_y(trig, point) ((cfloat3)(mad ((trig).y, (point).x, ((trig).x * (point).z)), ((point).y), mad (-(trig).x, (point).x, ((trig).y * (point).z))))
+#define rotate_z(trig, point) ((cfloat3)(mad ((trig).y, (point).x, - ((trig).x * (point).y)), mad ((trig).x, (point).x, ((trig).y * (point).y)), ((point).z)))
+
+kernel void backproject (
+%tmpl%%tmpl%
+                         global stype *volume,
+                         constant cfloat2 *region,
+                         const sampler_t sampler,
+                         const int3 real_size,
+                         const cfloat2 x_region,
+                         const cfloat2 y_region,
+                         const int z_number,
+                         cfloat2 axis_x,
+                         cfloat2 axis_y,
+                         cfloat2 axis_z,
+                         cfloat2 volume_x,
+                         cfloat2 volume_y,
+                         cfloat2 volume_z,
+                         cfloat2 detector_x,
+                         cfloat2 detector_y,
+                         cfloat2 detector_z,
+                         cfloat3 center,
+                         cfloat3 source_position,
+                         cfloat3 detector_position,
+                         const cfloat norm_factor,
+                         const cfloat2 gray_limit,
+                         const int cumulate)
+{
+    int idx = get_global_id (0);
+    int idy = get_global_id (1);
+    int idz = get_global_id (2);
+    cfloat3 voxel_0, voxel, detector_normal = (cfloat3)(0.0, -1.0, 0.0);
+    cfloat project_tmp, coeff, detector_offset = detector_position.y, tmp_transformation;
+    rtype result = 0.0;
+
+    if (idx < real_size.x && idy < real_size.y && idz < real_size.z) {
+        voxel_0.x = mad((cfloat) idx, x_region.y, x_region.x);
+        voxel_0.y = mad((cfloat) idy, y_region.y, y_region.x);
+        voxel_0.z = z_number;
+
+        // assign z-coordinate to the chosen parameter i.e. param = region[idz];
+        %tmpl%
+
+        // Start rotation angle independent transformations and temporary assignments
+        %tmpl%
+        // End rotation angle independent transformations and temporary assignments
+
+        // Start rotation angle dependent transformation, pixel fetch and slice weighing
+        %tmpl%
+        // End rotation angle dependent transformation, pixel fetch and slice weighing
+
+        if (cumulate) {
+            volume[idz * real_size.x * real_size.y + idy * real_size.x + idx] += %tmpl%;
+        } else {
+            volume[idz * real_size.x * real_size.y + idy * real_size.x + idx] = %tmpl%;
+        }
+    }
+}
