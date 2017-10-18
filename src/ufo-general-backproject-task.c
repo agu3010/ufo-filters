@@ -52,45 +52,49 @@ enum {
 
 static GParamSpec *properties[N_PROPERTIES] = { NULL, };
 
-/*{{{ Kernel creation*/
-static gchar *
-read_file (const gchar *filename)
+/*{{{ String Helper functions*/
+static gint
+find_number_of_occurences (const gchar *haystack, const gchar *needle)
 {
-    gssize length;
-    gssize buffer_length;
-    FILE *fp = fopen (filename, "r");
-    gchar *buffer;
+    gint num_occurences = 0;
+    const gchar *current = haystack;
+    guint needle_size = strlen (needle);
 
-    if (fp == NULL) {
-        return NULL;
+    while ((current = strstr (current, needle)) != NULL) {
+        current += needle_size;
+        num_occurences++;
     }
 
-    fseek (fp, 0, SEEK_END);
-    length = (gsize) ftell (fp);
-
-    if (length < 0) {
-        return NULL;
-    }
-
-    rewind (fp);
-    buffer = g_strnfill (length + 1, 0);
-
-    if (buffer == NULL) {
-        fclose (fp);
-        return NULL;
-    }
-
-    buffer_length = fread (buffer, 1, length, fp);
-    fclose (fp);
-
-    if (buffer_length != length) {
-        g_free (buffer);
-        return NULL;
-    }
-
-    return buffer;
+    return num_occurences;
 }
 
+static gchar *
+replace_substring (const gchar *haystack, const gchar *needle, const gchar *replacement)
+{
+    const gchar *current = haystack, *previous = haystack;
+    gchar num_occurences = find_number_of_occurences (haystack, needle);
+    gint needle_size = strlen (needle);
+    gint replacement_size = strlen (replacement);
+    gchar *result = g_strnfill (strlen (haystack) + num_occurences *
+                                MAX(replacement_size - needle_size, 0), 0);
+    gchar *current_result = result;
+
+    while ((current = strstr (previous, needle)) != NULL) {
+        /* Copy original from behind the last occurence of needle to the beginning of the next one */
+        current_result = g_stpcpy (current_result, g_strndup (previous, (gint) (current - previous)));
+        /* Append the replacement substring */
+        current_result = g_stpcpy (current_result, replacement);
+        /* Continue from behind the needle */
+        previous = current + needle_size;
+    }
+    /* Copy the last chunk of code which doesn't have needle in it */
+    g_stpcpy (current_result, previous);
+
+    return result;
+}
+/*}}}*/
+
+/*{{{ Kernel creation*/
 /**
  * make_args:
  * @burst: (in): number of processed projections in the kernel
@@ -413,89 +417,67 @@ make_transformations (gint burst, gboolean with_axis, gboolean perpendicular_det
     return code;
 }
 
-static gint
-find_number_of_occurences (const gchar *haystack, const gchar *needle)
-{
-    gint num_occurences = 0;
-    const gchar *current = haystack;
-    guint needle_size = strlen (needle);
-
-    while ((current = strstr (current, needle)) != NULL) {
-        current += needle_size;
-        num_occurences++;
-    }
-
-    return num_occurences;
-}
-
+/**
+ * make_kernel:
+ * @template (in): kernel template string
+ * @burst (in): how many projections to process in one kernel invocation
+ * @with_axis (in): rotate the rotation axis
+ * @with_volume: (in): rotate reconstructed volume
+ * @perpendicular_detector: (in): is the detector perpendicular to the beam
+ * @parallel_beam: (in): is the beam parallel
+ * @compute_type (in): data type for calculations (one of "half", "float", "double")
+ * @result_type (in): data type for storing the intermediate result (one of "half", "float", "double")
+ * @store_type (in): data type of the output volume (one of "half", "float", "double",
+ * "uchar", "ushort", "uint")
+ * @parameter: (in): parameter which represents the third reconstruction axis
+ * @error: A #GError
+ *
+ * Make backprojection kernel.
+ */
 static gchar *
-replace_substring (const gchar *haystack, const gchar *needle, const gchar *replacement)
-{
-    const gchar *current = haystack, *previous = haystack;
-    gchar num_occurences = find_number_of_occurences (haystack, needle);
-    gint needle_size = strlen (needle);
-    gint replacement_size = strlen (replacement);
-    gchar *result = g_strnfill (strlen (haystack) + num_occurences *
-                                MAX(replacement_size - needle_size, 0), 0);
-    gchar *current_result = result;
-
-    while ((current = strstr (previous, needle)) != NULL) {
-        /* Copy original from behind the last occurence of needle to the beginning of the next one */
-        current_result = g_stpcpy (current_result, g_strndup (previous, (gint) (current - previous)));
-        /* Append the replacement substring */
-        current_result = g_stpcpy (current_result, replacement);
-        /* Continue from behind the needle */
-        previous = current + needle_size;
-    }
-    /* Copy the last chunk of code which doesn't have needle in it */
-    g_stpcpy (current_result, previous);
-
-    return result;
-}
-
-static gchar *
-make_kernel (gint burst, gboolean with_axis, gboolean with_volume, gboolean perpendicular_detector,
-             gboolean parallel_beam, const gchar *compute_type, const gchar *result_type,
-             const gchar *store_type, const gchar *parameter)
+make_kernel (gchar *template, gint burst, gboolean with_axis, gboolean with_volume,
+             gboolean perpendicular_detector, gboolean parallel_beam, const gchar *compute_type,
+             const gchar *result_type, const gchar *store_type, const gchar *parameter,
+             GError **error)
 {
     const gchar *double_pragma_def, *double_pragma, *half_pragma_def, *half_pragma,
           *image_args_fmt, *trigonomoerty_args_fmt;
-    gchar *tmpl, *image_args, *trigonometry_args, *type_conversion, *parameter_assignment,
+    gchar *image_args, *trigonometry_args, *type_conversion, *parameter_assignment,
           *static_transformations, *transformations, *code_tmp, *code, **parts;
 
     double_pragma_def = "#pragma OPENCL EXTENSION cl_khr_fp64 : enable\n";
     half_pragma_def = "#pragma OPENCL EXTENSION cl_khr_fp16 : enable\n\n";
     image_args_fmt = "\t\t\t read_only image2d_t projection_%02d,\n";
     trigonomoerty_args_fmt = "\t\t\t const cfloat2 tomo_%02d,\n";
-    tmpl = read_file ("template.in");
-    parts = g_strsplit (tmpl, "%tmpl%", 8);
+    parts = g_strsplit (template, "%tmpl%", 8);
 
     if ((image_args = make_args (burst, image_args_fmt)) == NULL) {
-        g_warning ("Error making image arguments");
+        g_set_error (error, UFO_TASK_ERROR, UFO_TASK_ERROR_SETUP, "Error making image arguments");
         return NULL;
     }
     if ((trigonometry_args = make_args (burst, trigonomoerty_args_fmt)) == NULL) {
-        g_warning ("Error making trigonometric arguments");
+        g_set_error (error, UFO_TASK_ERROR, UFO_TASK_ERROR_SETUP, "Error making trigonometric arguments");
         return NULL;
     }
     if ((type_conversion = make_type_conversion (compute_type, store_type)) == NULL) {
-        g_warning ("Error making type conversion");
+        g_set_error (error, UFO_TASK_ERROR, UFO_TASK_ERROR_SETUP, "Error making type conversion");
         return NULL;
     }
     parameter_assignment = make_parameter_assignment (parameter);
     if (parameter_assignment == NULL) {
-        g_warning ("Wrong parameter name");
+        g_set_error (error, UFO_TASK_ERROR, UFO_TASK_ERROR_SETUP, "Wrong parameter name");
         return NULL;
     }
 
     if ((static_transformations = make_static_transformations(with_volume, perpendicular_detector,
                                                               parallel_beam)) == NULL) {
-        g_warning ("Error making static transformations");
+        g_set_error (error, UFO_TASK_ERROR, UFO_TASK_ERROR_SETUP, "Error making static transformations");
         return NULL;
     }
     if ((transformations = make_transformations (burst, with_axis, perpendicular_detector,
                                             parallel_beam, compute_type)) == NULL) {
-        g_warning ("Wrong parameter name");
+        g_set_error (error, UFO_TASK_ERROR, UFO_TASK_ERROR_SETUP,
+                     "Error making tomographic-angle-based transformations");
         return NULL;
     }
     if (!(g_strcmp0 (compute_type, "double") && g_strcmp0 (result_type, "double"))) {
@@ -522,7 +504,6 @@ make_kernel (gint burst, gboolean with_axis, gboolean with_volume, gboolean perp
     g_free (code);
     code = replace_substring (code_tmp, "stype", store_type);
 
-    g_free (tmpl);
     g_free (image_args);
     g_free (trigonometry_args);
     g_free (type_conversion);
