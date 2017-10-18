@@ -30,5 +30,5 @@ get_float_from_array_or_scalar (GValueArray *array, guint index)
         g_assert (array->n_values > index);
     }
 
-    return g_value_get_float (g_value_array_get_nth (array, index));
+    return EXTRACT_FLOAT (array, index);
 }

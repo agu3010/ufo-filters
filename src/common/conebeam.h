@@ -20,6 +20,14 @@
 #ifndef UFO_CONEBEAM_H
 #define UFO_CONEBEAM_H
 
+#define EXTRACT_INT(region, index) g_value_get_int (g_value_array_get_nth ((region), (index)))
+#define EXTRACT_FLOAT(region, index) g_value_get_float (g_value_array_get_nth ((region), (index)))
+#define REGION_SIZE(region) ((EXTRACT_INT ((region), 2)) == 0) ? 0 : \
+                            ((EXTRACT_INT ((region), 1) - EXTRACT_INT ((region), 0) - 1) /\
+                            EXTRACT_INT ((region), 2) + 1)
+#define MAX(a, b) (((a) > (b)) ? (a) : (b))
+#define IS_BEAM_PARALLEL(source_position) (isinf (EXTRACT_FLOAT ((source_position), 1)))
+
 #include <glib.h>
 #include <glib-object.h>
 
