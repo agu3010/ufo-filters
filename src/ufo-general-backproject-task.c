@@ -31,7 +31,164 @@
 
 #include <config.h>
 #include "common/conebeam.h"
+#include "common/ufo-addressing.h"
 #include "ufo-general-backproject-task.h"
+
+#define STATIC_ARG_OFFSET 19
+#define G_LOG_LEVEL_DOMAIN "gbp"
+#define DEFINE_FILL_SINCOS(type)                      \
+static void                                           \
+fill_sincos_##type (type *array, const gdouble angle) \
+{                                                     \
+    array[0] = (type) sin (angle);                    \
+    array[1] = (type) cos (angle);                    \
+}
+
+#define DEFINE_CREATE_REGIONS(type)                                                 \
+static void                                                                         \
+create_regions_##type (UfoGeneralBackprojectTaskPrivate *priv,                      \
+                       const cl_command_queue cmd_queue,                            \
+                       const gdouble start,                                         \
+                       const gdouble step)                                          \
+{                                                                                   \
+    guint i, j;                                                                     \
+    gsize region_size;                                                              \
+    type *region_values;                                                            \
+    cl_int cl_error;                                                                \
+    gdouble value;                                                                  \
+    gboolean is_angular = is_parameter_angular (priv->parameter);                   \
+                                                                                    \
+    g_log ("gbp", G_LOG_LEVEL_DEBUG, "Start, step: %g %g", start, step);            \
+                                                                                    \
+    region_size = priv->num_slices_per_chunk * 2 * sizeof (type);                   \
+    region_values = (type *) g_malloc0 (region_size);                               \
+                                                                                    \
+    for (i = 0; i < priv->num_chunks; i++) {                                        \
+        g_log ("gbp", G_LOG_LEVEL_DEBUG, "Chunk %d region:", i);                    \
+        for (j = 0; j < priv->num_slices_per_chunk; j++) {                          \
+            value = start + i * priv->num_slices_per_chunk * step + j * step;       \
+            if (is_angular) {                                                       \
+                region_values[2 * j] = (type) sin (value);                          \
+                region_values[2 * j + 1] = (type) cos (value);                      \
+            } else {                                                                \
+                region_values[2 * j] = (type) value;                                \
+            }                                                                       \
+            g_log ("gbp", G_LOG_LEVEL_DEBUG, "%g,%g",                               \
+                   region_values[2 * j], region_values[2 * j + 1]);                 \
+        }                                                                           \
+        /* Make sure the memory object is associated with the current node,         \
+         * hence no CL_MEM_COPY_HOST_PTR. TODO: If the flag is specified, there are \
+         * out of resources errors in the process function. Investigate this. */    \
+        priv->cl_regions[i] = clCreateBuffer (priv->context,                        \
+                                              CL_MEM_READ_ONLY,                     \
+                                              region_size,                          \
+                                              NULL,                                 \
+                                              &cl_error);                           \
+        UFO_RESOURCES_CHECK_CLERR (cl_error);                                       \
+        UFO_RESOURCES_CHECK_CLERR (clEnqueueWriteBuffer (cmd_queue,                 \
+                                                         priv->cl_regions[i],       \
+                                                         CL_TRUE,                   \
+                                                         0, region_size,            \
+                                                         region_values,             \
+                                                         0, NULL, NULL));           \
+    }                                                                               \
+                                                                                    \
+    g_free (region_values);                                                         \
+}
+
+#define DEFINE_SET_STATIC_ARGS(type)                                                                                     \
+static void                                                                                                              \
+set_static_args_##type (UfoGeneralBackprojectTaskPrivate *priv,                                                          \
+                        UfoRequisition *requisition,                                                                     \
+                        const cl_kernel kernel)                                                                          \
+{                                                                                                                        \
+    type slice_z_position, region_x[2], region_y[2], axis_x[2], axis_y[2], axis_z[2],                                    \
+         volume_x[2], volume_y[2], volume_z[2], detector_x[2], detector_y[2], detector_z[2],                             \
+         gray_limit[2], center_position[4], source_position[4], detector_position[4], norm_factor;                       \
+    guint burst, j, i = 0;                                                                                               \
+    const gint real_size[4] = {requisition->dims[0], requisition->dims[1], (gint) priv->num_slices, 0};                  \
+    gdouble gray_delta_recip = (gdouble) get_integer_maximum (st_values[priv->store_type].value_nick) /                  \
+                               (priv->gray_map_max - priv->gray_map_min);                                                \
+    norm_factor = 2 * G_PI / priv->num_projections;                                                                      \
+    burst = kernel == priv->kernel ? BURST : priv->num_projections % BURST;                                              \
+                                                                                                                         \
+    UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (kernel, i++, sizeof (cl_sampler), &priv->sampler));                       \
+    UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (kernel, i++, sizeof (cl_int3), real_size));                               \
+                                                                                                                         \
+    region_x[0] = (type) EXTRACT_INT (priv->region_x, 0);                                                                \
+    region_x[1] = (type) EXTRACT_INT (priv->region_x, 2);                                                                \
+    if (!region_x[1]) {                                                                                                  \
+        region_x[0] = (type) -requisition->dims[0] / 2.0;                                                                \
+        region_x[1] = 1.0f;                                                                                              \
+    }                                                                                                                    \
+    region_y[0] = (type) EXTRACT_INT (priv->region_y, 0);                                                                \
+    region_y[1] = (type) EXTRACT_INT (priv->region_y, 2);                                                                \
+    if (!region_y[1]) {                                                                                                  \
+        region_y[0] = (type) -requisition->dims[1] / 2.0;                                                                \
+        region_y[1] = 1.0f;                                                                                              \
+    }                                                                                                                    \
+    slice_z_position = (type) priv->z;                                                                                   \
+    fill_sincos_##type (axis_x, get_double_from_array_or_scalar (priv->axis_angle_x, priv->count));         \
+    fill_sincos_##type (axis_y, get_double_from_array_or_scalar (priv->axis_angle_y, priv->count));         \
+    fill_sincos_##type (axis_z, get_double_from_array_or_scalar (priv->axis_angle_z, priv->count));         \
+    fill_sincos_##type (volume_x, get_double_from_array_or_scalar (priv->volume_angle_x, priv->count));     \
+    fill_sincos_##type (volume_y, get_double_from_array_or_scalar (priv->volume_angle_y, priv->count));     \
+    fill_sincos_##type (volume_z, get_double_from_array_or_scalar (priv->volume_angle_z, priv->count));     \
+    fill_sincos_##type (detector_x, get_double_from_array_or_scalar (priv->detector_angle_x, priv->count)); \
+    fill_sincos_##type (detector_y, get_double_from_array_or_scalar (priv->detector_angle_y, priv->count)); \
+    fill_sincos_##type (detector_z, get_double_from_array_or_scalar (priv->detector_angle_z, priv->count)); \
+    center_position[0] = (type) get_double_from_array_or_scalar (priv->center_x, priv->count);                           \
+    center_position[2] = (type) get_double_from_array_or_scalar (priv->center_z, priv->count);                           \
+    /* TODO: use only 2D center in the kernel */                                                                         \
+    center_position[1] = 0.0f;                                                                                           \
+    source_position[0] = (type) get_double_from_array_or_scalar (priv->source_position_x, priv->count);                  \
+    source_position[1] = (type) get_double_from_array_or_scalar (priv->source_position_y, priv->count);                  \
+    source_position[2] = (type) get_double_from_array_or_scalar (priv->source_position_z, priv->count);                  \
+    detector_position[0] = (type) get_double_from_array_or_scalar (priv->detector_position_x, priv->count);              \
+    detector_position[1] = (type) get_double_from_array_or_scalar (priv->detector_position_y, priv->count);              \
+    detector_position[2] = (type) get_double_from_array_or_scalar (priv->detector_position_z, priv->count);              \
+    norm_factor = (type) norm_factor;                                                                                    \
+    gray_limit[0] = (type) priv->gray_map_min;                                                                           \
+    gray_limit[1] = (type) gray_delta_recip;                                                                             \
+    UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (kernel, i++, sizeof (type##2), region_x));                                \
+    UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (kernel, i++, sizeof (type##2), region_y));                                \
+    UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (kernel, i++, sizeof (type), &slice_z_position));                          \
+    UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (kernel, i++, sizeof (type##2), axis_x));                                  \
+    UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (kernel, i++, sizeof (type##2), axis_y));                                  \
+    UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (kernel, i++, sizeof (type##2), axis_z));                                  \
+    UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (kernel, i++, sizeof (type##2), volume_x));                                \
+    UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (kernel, i++, sizeof (type##2), volume_y));                                \
+    UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (kernel, i++, sizeof (type##2), volume_z));                                \
+    UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (kernel, i++, sizeof (type##2), detector_x));                              \
+    UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (kernel, i++, sizeof (type##2), detector_y));                              \
+    UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (kernel, i++, sizeof (type##2), detector_z));                              \
+    UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (kernel, i++, sizeof (type##3), center_position));                         \
+    UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (kernel, i++, sizeof (type##3), source_position));                         \
+    UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (kernel, i++, sizeof (type##3), detector_position));                       \
+    UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (kernel, i++, sizeof (type), &norm_factor));                               \
+    UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (kernel, i++, sizeof (type##2), gray_limit));                              \
+    g_log ("gbp", G_LOG_LEVEL_DEBUG, "region_x: %g %g", region_x[0], region_x[1]);                                       \
+    g_log ("gbp", G_LOG_LEVEL_DEBUG, "region_y: %g %g", region_y[0], region_y[1]);                                       \
+    g_log ("gbp", G_LOG_LEVEL_DEBUG, "slice_z_position: %g", slice_z_position);                                          \
+    g_log ("gbp", G_LOG_LEVEL_DEBUG, "axis: %g %g, %g %g, %g %g",                                                        \
+           axis_x[0], axis_x[1], axis_y[0], axis_y[1], axis_z[0], axis_z[1]);                                            \
+    g_log ("gbp", G_LOG_LEVEL_DEBUG, "volume: %g %g, %g %g, %g %g",                                                      \
+           volume_x[0], volume_x[1], volume_y[0], volume_y[1], volume_z[0], volume_z[1]);                                \
+    g_log ("gbp", G_LOG_LEVEL_DEBUG, "detector_x: %g %g, %g %g, %g %g",                                                  \
+           detector_x[0], detector_x[1], detector_y[0], detector_y[1], detector_z[0], detector_z[1]);                    \
+    g_log ("gbp", G_LOG_LEVEL_DEBUG, "center_position: %g %g %g",                                                        \
+           center_position[0], center_position[1], center_position[2]);                                                  \
+    g_log ("gbp", G_LOG_LEVEL_DEBUG, "source_position: %g %g %g",                                                        \
+           source_position[0], source_position[1], source_position[2]);                                                  \
+    g_log ("gbp", G_LOG_LEVEL_DEBUG, "detector_position: %g %g %g",                                                      \
+           detector_position[0], detector_position[1], detector_position[2]);                                            \
+    g_log ("gbp", G_LOG_LEVEL_DEBUG, "norm_factor: %g", norm_factor);                                                    \
+    g_log ("gbp", G_LOG_LEVEL_DEBUG, "gray_limit: %g %g", gray_limit[0], gray_limit[1]);                                 \
+                                                                                                                         \
+    for (j = 0; j < burst; j++) {                                                                                        \
+        UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (kernel, i++, sizeof (cl_mem), &priv->projections[j]));                \
+    }                                                                                                                    \
+}
 
 /*{{{ Enumerations */
 typedef enum {
@@ -60,6 +217,11 @@ typedef enum {
     FT_FLOAT,
     FT_DOUBLE
 } FloatType;
+
+typedef enum {
+    CT_FLOAT,
+    CT_DOUBLE
+} ComputeType;
 
 typedef enum {
     ST_HALF,
@@ -92,6 +254,12 @@ static const GEnumValue parameter_values[] = {
     { 0, NULL, NULL}
 };
 
+static GEnumValue compute_type_values[] = {
+    {CT_FLOAT,  "FT_FLOAT",  "float"},
+    {CT_DOUBLE, "FT_DOUBLE", "double"},
+    { 0, NULL, NULL}
+};
+
 static GEnumValue ft_values[] = {
     {FT_HALF,   "FT_HALF",   "half"},
     {FT_FLOAT,  "FT_FLOAT",  "float"},
@@ -112,6 +280,7 @@ static GEnumValue st_values[] = {
 
 struct _UfoGeneralBackprojectTaskPrivate {
     /* Properties */
+    gdouble z;
     GValueArray *region, *region_x, *region_y;
     GValueArray *center_x, *center_z;
     GValueArray *source_position_x, *source_position_y, *source_position_z;
@@ -119,18 +288,24 @@ struct _UfoGeneralBackprojectTaskPrivate {
     GValueArray *detector_angle_x, *detector_angle_y, *detector_angle_z;
     GValueArray *axis_angle_x, *axis_angle_y, *axis_angle_z;
     GValueArray *volume_angle_x, *volume_angle_y, *volume_angle_z;
-    FloatType compute_type, result_type;
+    ComputeType compute_type, result_type;
     StoreType store_type;
     Parameter parameter;
+    gdouble gray_map_min, gray_map_max;
     /* Private */
-    guint count;
+    guint count, generated;
+    cl_mem projections[BURST];
+    cl_mem *chunks;
+    cl_mem *cl_regions;
+    guint num_slices, num_slices_per_chunk, num_chunks;
     gfloat sines[BURST], cosines[BURST];
     guint num_projections;
-    gfloat overall_angle;
-    gboolean generated;
+    gdouble overall_angle;
+    AddressingMode addressing_mode;
     /* OpenCL */
     cl_context context;
     cl_kernel kernel, rest_kernel;
+    cl_sampler sampler;
 };
 
 static void ufo_task_interface_init (UfoTaskIface *iface);
@@ -144,9 +319,10 @@ G_DEFINE_TYPE_WITH_CODE (UfoGeneralBackprojectTask, ufo_general_backproject_task
 enum {
     PROP_0,
     PROP_PARAMETER,
+    PROP_Z,
     PROP_REGION,
-    PROP_region_x,
-    PROP_region_y,
+    PROP_REGION_X,
+    PROP_REGION_Y,
     PROP_CENTER_X,
     PROP_CENTER_Z,
     PROP_SOURCE_POSITION_X,
@@ -169,16 +345,84 @@ enum {
     PROP_RESULT_TYPE,
     PROP_STORE_TYPE,
     PROP_OVERALL_ANGLE,
+    PROP_ADDRESSING_MODE,
+    PROP_GRAY_MAP_MIN,
+    PROP_GRAY_MAP_MAX,
     N_PROPERTIES
 };
 
 static GParamSpec *properties[N_PROPERTIES] = { NULL, };
 
 /*{{{ General helper functions*/
+DEFINE_FILL_SINCOS (cl_float)
+DEFINE_FILL_SINCOS (cl_double)
+
 static gboolean
-are_almost_equal (gfloat a, gfloat b)
+are_almost_equal (gdouble a, gdouble b)
 {
     return (fabs (a - b) < 1e-7);
+}
+
+static gsize
+get_type_size (StoreType type)
+{
+    gsize size;
+
+    switch (type) {
+        case ST_HALF:
+            size = sizeof (cl_half);
+            break;
+        case ST_FLOAT:
+            size = sizeof (cl_float);
+            break;
+        case ST_DOUBLE:
+            size = sizeof (cl_double);
+            break;
+        case ST_UCHAR:
+            size = sizeof (cl_uchar);
+            break;
+        case ST_USHORT:
+            size = sizeof (cl_ushort);
+            break;
+        case ST_UINT:
+            size = sizeof (cl_uint);
+            break;
+        default:
+            g_warning ("Uknown store type");
+            size = 0;
+            break;
+    }
+
+    return size;
+}
+
+static gulong
+get_integer_maximum (const gchar *type_name)
+{
+    gint is_uchar = !g_strcmp0 (type_name, "uchar");
+    gint is_ushort = !g_strcmp0 (type_name, "ushort");
+    gint is_uint = !g_strcmp0 (type_name, "uint");
+    gulong maxval = 0;
+
+    if (is_uchar) {
+        maxval = 0xFF;
+    } else if (is_ushort) {
+        maxval = 0xFFFF;
+    } else if (is_uint) {
+        maxval = 0xFFFFFFFF;
+    }
+
+    return maxval;
+}
+
+static gboolean
+is_parameter_angular (Parameter parameter)
+{
+    return (parameter == PARAMETER_AXIS_ROTATION_X || parameter == PARAMETER_AXIS_ROTATION_Y ||
+            parameter == PARAMETER_AXIS_ROTATION_Z || parameter == PARAMETER_VOLUME_ROTATION_X ||
+            parameter == PARAMETER_VOLUME_ROTATION_Y || parameter == PARAMETER_VOLUME_ROTATION_Z ||
+            parameter == PARAMETER_DETECTOR_ROTATION_X || parameter == PARAMETER_DETECTOR_ROTATION_Y ||
+            parameter == PARAMETER_DETECTOR_ROTATION_Z);
 }
 /*}}}*/
 
@@ -250,6 +494,8 @@ populate (int num, GType type, gpointer values)
     for (i = 0; i < num; i++) {
         if (type == G_TYPE_FLOAT) {
             g_value_set_float (&value, *((gfloat *) values + i));
+        } else if (type == G_TYPE_DOUBLE) {
+            g_value_set_double (&value, *((gdouble *) values + i));
         } else if (type == G_TYPE_INT) {
             g_value_set_int (&value, *((gint *) values + i));
         } else {
@@ -311,22 +557,11 @@ make_type_conversion (const gchar *compute_type, const gchar *store_type)
     gulong size = 128;
     gulong written;
     gchar *code = g_strnfill (size, 0);
-    gint is_uchar = !g_strcmp0 (store_type, "uchar");
-    gint is_ushort = !g_strcmp0 (store_type, "ushort");
-    gint is_uint = !g_strcmp0 (store_type, "uint");
-    guint maxval = 0;
-
-    if (is_uchar) {
-        maxval = 0xFF;
-    } else if (is_ushort) {
-        maxval = 0xFFFF;
-    } else if (is_uint) {
-        maxval = 0xFFFFFFFF;
-    }
+    gulong maxval = get_integer_maximum (store_type);
 
     if (maxval) {
         written = g_snprintf (code, size,
-                              "(%s) clamp ((%s)(gray_limit.y * (norm_factor * result - gray_limit.x)), (%s) 0.0, (%s) %u.0)",
+                              "(%s) clamp ((%s)(gray_limit.y * (norm_factor * result - gray_limit.x)), (%s) 0.0, (%s) %lu.0)",
                               store_type, compute_type, compute_type, compute_type, maxval);
     } else {
         written = g_snprintf (code, size, "(%s) (norm_factor * result)", store_type);
@@ -687,6 +922,65 @@ make_kernel (gchar *template, gint burst, gboolean with_axis, gboolean with_volu
 }
 /*}}}*/
 
+/*{{{ OpenCL helper functions */
+DEFINE_CREATE_REGIONS (cl_float)
+DEFINE_CREATE_REGIONS (cl_double)
+
+static void
+create_images (UfoGeneralBackprojectTaskPrivate *priv, gsize width, gsize height)
+{
+    cl_image_format image_fmt;
+    cl_int cl_error;
+    guint i;
+
+    g_log ("gbp", G_LOG_LEVEL_DEBUG, "Creating images %lu x %lu", width, height);
+
+    for (i = 0; i < BURST; i++) {
+        /* TODO: dangerous, don't rely on the ufo-buffer */
+        image_fmt.image_channel_order = CL_INTENSITY;
+        image_fmt.image_channel_data_type = CL_FLOAT;
+        /* TODO: what about the "other" API? */
+        priv->projections[i] = clCreateImage2D (priv->context,
+                                                    CL_MEM_READ_ONLY,
+                                                    &image_fmt,
+                                                    width,
+                                                    height,
+                                                    0,
+                                                    NULL,
+                                                    &cl_error);
+        UFO_RESOURCES_CHECK_CLERR (cl_error);
+    }
+}
+
+DEFINE_SET_STATIC_ARGS (cl_float)
+DEFINE_SET_STATIC_ARGS (cl_double)
+
+static void
+copy_to_image (const cl_command_queue cmd_queue,
+               UfoBuffer *input,
+               cl_mem output,
+               guint width,
+               guint height)
+{
+    cl_event event;
+    cl_int errcode;
+    cl_mem input_array;
+    const size_t origin[] = {0, 0, 0};
+    const size_t region[] = {width, height, 1};
+
+    input_array = ufo_buffer_get_device_array (input, cmd_queue);
+    errcode = clEnqueueCopyBufferToImage (cmd_queue,
+                                          input_array,
+                                          output,
+                                          0, origin, region,
+                                          0, NULL, &event);
+
+    UFO_RESOURCES_CHECK_CLERR (errcode);
+    UFO_RESOURCES_CHECK_CLERR (clWaitForEvents (1, &event));
+    UFO_RESOURCES_CHECK_CLERR (clReleaseEvent (event));
+}
+/*}}}*/
+
 UfoNode *
 ufo_general_backproject_task_new (void)
 {
@@ -699,6 +993,7 @@ ufo_general_backproject_task_setup (UfoTask *task,
                                     GError **error)
 {
     guint i;
+    cl_int cl_error;
     gboolean with_axis, with_volume, parallel_beam, perpendicular_detector;
     gchar *template, *kernel_code;
     UfoGeneralBackprojectTaskPrivate *priv = UFO_GENERAL_BACKPROJECT_TASK_GET_PRIVATE (task);
@@ -710,73 +1005,118 @@ ufo_general_backproject_task_setup (UfoTask *task,
         return;
     }
 
+    if (priv->gray_map_min >= priv->gray_map_max &&
+        (priv->store_type == ST_UCHAR || priv->store_type == ST_USHORT || priv->store_type == ST_UINT)) {
+        g_set_error (error, UFO_TASK_ERROR, UFO_TASK_ERROR_SETUP,
+                     "Gray mapping minimum must be less then the maximum");
+        return;
+    }
+
+    /* Initialization */
     /* Assume the most efficient geometry, change if necessary */
     with_axis = FALSE;
     with_volume = FALSE;
     perpendicular_detector = TRUE;
     parallel_beam = TRUE;
+    priv->kernel = NULL;
+    priv->rest_kernel = NULL;
+    priv->chunks = NULL;
+    priv->cl_regions = NULL;
+
+    /* Actual parameter setup */
     for (i = 0; i < priv->num_projections; i++) {
-        if (!(are_almost_equal (get_float_from_array_or_scalar (priv->axis_angle_x, 0), 0) &&
-              are_almost_equal (get_float_from_array_or_scalar (priv->axis_angle_y, 0), 0) &&
-              are_almost_equal (get_float_from_array_or_scalar (priv->axis_angle_z, 0), 0))) {
+        if (!(are_almost_equal (get_double_from_array_or_scalar (priv->axis_angle_x, 0), 0) &&
+              are_almost_equal (get_double_from_array_or_scalar (priv->axis_angle_y, 0), 0) &&
+              are_almost_equal (get_double_from_array_or_scalar (priv->axis_angle_z, 0), 0))) {
             with_axis = TRUE;
         }
-        if (!(are_almost_equal (get_float_from_array_or_scalar (priv->volume_angle_x, 0), 0) &&
-              are_almost_equal (get_float_from_array_or_scalar (priv->volume_angle_y, 0), 0) &&
-              are_almost_equal (get_float_from_array_or_scalar (priv->volume_angle_z, 0), 0))) {
+        if (!(are_almost_equal (get_double_from_array_or_scalar (priv->volume_angle_x, 0), 0) &&
+              are_almost_equal (get_double_from_array_or_scalar (priv->volume_angle_y, 0), 0) &&
+              are_almost_equal (get_double_from_array_or_scalar (priv->volume_angle_z, 0), 0))) {
             with_volume = TRUE;
         }
-        if (!(are_almost_equal (get_float_from_array_or_scalar (priv->detector_angle_x, 0), 0) &&
-              are_almost_equal (get_float_from_array_or_scalar (priv->detector_angle_y, 0), 0) &&
-              are_almost_equal (get_float_from_array_or_scalar (priv->detector_angle_z, 0), 0))) {
+        if (!(are_almost_equal (get_double_from_array_or_scalar (priv->detector_angle_x, 0), 0) &&
+              are_almost_equal (get_double_from_array_or_scalar (priv->detector_angle_y, 0), 0) &&
+              are_almost_equal (get_double_from_array_or_scalar (priv->detector_angle_z, 0), 0))) {
             perpendicular_detector = FALSE;
         }
-        if (!isinf (get_float_from_array_or_scalar (priv->source_position_y, i))) {
+        if (!isinf (get_double_from_array_or_scalar (priv->source_position_y, i))) {
             parallel_beam = FALSE;
         }
     }
 
-    g_debug ("burst: %d, parameter: %s with axis: %d, with volume: %d, "
-             "perpendicular detector: %d, parallel beam: %d, "
-             "compute type: %s, result type: %s, store type: %s",
+    g_log ("gbp", G_LOG_LEVEL_DEBUG, "burst: %d, parameter: %s with axis: %d, with volume: %d, "
+           "perpendicular detector: %d, parallel beam: %d, "
+           "compute type: %s, result type: %s, store type: %s",
              BURST, parameter_values[priv->parameter].value_nick, with_axis, with_volume,
              perpendicular_detector, parallel_beam,
-             ft_values[priv->compute_type].value_nick,
+             compute_type_values[priv->compute_type].value_nick,
              ft_values[priv->result_type].value_nick,
              st_values[priv->store_type].value_nick);
 
-    /* Create kernel source code based on geometry settings */
-    if (!(template = ufo_resources_get_kernel_source (resources, "general_backproject.in", error))) {
-        return;
+    if (priv->axis_angle_x->n_values == priv->num_projections ||
+        priv->axis_angle_y->n_values == priv->num_projections ||
+        priv->axis_angle_z->n_values == priv->num_projections ||
+        priv->volume_angle_x->n_values == priv->num_projections ||
+        priv->volume_angle_y->n_values == priv->num_projections ||
+        priv->volume_angle_z->n_values == priv->num_projections ||
+        priv->detector_angle_x->n_values == priv->num_projections ||
+        priv->detector_angle_y->n_values == priv->num_projections ||
+        priv->detector_angle_z->n_values == priv->num_projections ||
+        priv->detector_position_x->n_values == priv->num_projections ||
+        priv->detector_position_y->n_values == priv->num_projections ||
+        priv->detector_position_z->n_values == priv->num_projections ||
+        priv->source_position_x->n_values == priv->num_projections ||
+        priv->source_position_y->n_values == priv->num_projections ||
+        priv->source_position_z->n_values == priv->num_projections ||
+        priv->center_x->n_values == priv->num_projections ||
+        priv->center_z->n_values == priv->num_projections) {
+        g_log ("gbp", G_LOG_LEVEL_DEBUG, "Using vectorized parameters kernel");
+        g_set_error (error, UFO_TASK_ERROR, UFO_TASK_ERROR_SETUP, "Vectorized parameters are not yet implemented");
+    } else {
+        g_log ("gbp", G_LOG_LEVEL_DEBUG, "Using scalar-based parameters kernel");
+        /* Create kernel source code based on geometry settings */
+        if (!(template = ufo_resources_get_kernel_source (resources, "general_backproject.in", error))) {
+            return;
+        }
+
+        kernel_code = make_kernel (template, BURST, with_axis, with_volume,
+                                   perpendicular_detector, parallel_beam,
+                                   compute_type_values[priv->compute_type].value_nick,
+                                   ft_values[priv->result_type].value_nick,
+                                   st_values[priv->store_type].value_nick,
+                                   parameter_values[priv->parameter].value_nick, error);
+        priv->kernel = ufo_resources_get_kernel_from_source_with_opts (resources,
+                                                                       kernel_code,
+                                                                       "backproject",
+                                                                       NULL,
+                                                                       error);
+        g_free (kernel_code);
+
+        if (priv->num_projections % BURST) {
+            kernel_code = make_kernel (template, priv->num_projections % BURST,
+                                       with_axis, with_volume,
+                                       perpendicular_detector, parallel_beam,
+                                       compute_type_values[priv->compute_type].value_nick,
+                                       ft_values[priv->result_type].value_nick,
+                                       st_values[priv->store_type].value_nick,
+                                       parameter_values[priv->parameter].value_nick, error);
+
+            /* If num_projections % BURST != 0 we need one more kernel to process the remaining projections */
+            priv->rest_kernel = ufo_resources_get_kernel_from_source_with_opts (resources,
+                                                                                kernel_code,
+                                                                                "backproject",
+                                                                                NULL,
+                                                                                error);
+            /* g_printf ("%s", kernel_code); */
+            g_free (kernel_code);
+        }
+        g_free (template);
     }
 
-    kernel_code = make_kernel (template, BURST, with_axis, with_volume,
-                               perpendicular_detector, parallel_beam,
-                               ft_values[priv->compute_type].value_nick,
-                               ft_values[priv->result_type].value_nick,
-                               st_values[priv->store_type].value_nick,
-                               parameter_values[priv->parameter].value_nick, error);
-    priv->kernel = ufo_resources_get_kernel_from_source_with_opts (resources,
-                                                                   kernel_code,
-                                                                   "backproject",
-                                                                   NULL,
-                                                                   error);
-    g_free (kernel_code);
-
-    kernel_code = make_kernel (template, priv->num_projections % BURST,
-                               with_axis, with_volume,
-                               perpendicular_detector, parallel_beam,
-                               ft_values[priv->compute_type].value_nick,
-                               ft_values[priv->result_type].value_nick,
-                               st_values[priv->store_type].value_nick,
-                               parameter_values[priv->parameter].value_nick, error);
-
-    /* If num_projections % BURST != 0 we need one more kernel to process the remaining projections */
-    priv->rest_kernel = ufo_resources_get_kernel_from_source_with_opts (resources,
-                                                                        kernel_code,
-                                                                        "backproject",
-                                                                        NULL,
-                                                                        error);
+    for (i = 0; i < BURST; i++) {
+        priv->projections[i] = NULL;
+    }
 
     /* Set OpenCL variables */
     priv->context = ufo_resources_get_context (resources);
@@ -788,9 +1128,8 @@ ufo_general_backproject_task_setup (UfoTask *task,
     if (priv->rest_kernel) {
         UFO_RESOURCES_CHECK_CLERR (clRetainKernel (priv->rest_kernel));
     }
-
-    g_free (template);
-    g_free (kernel_code);
+    priv->sampler = clCreateSampler (priv->context, (cl_bool) FALSE, priv->addressing_mode, CL_FILTER_LINEAR, &cl_error);
+    UFO_RESOURCES_CHECK_CLERR (cl_error);
 }
 
 static void
@@ -800,13 +1139,12 @@ ufo_general_backproject_task_get_requisition (UfoTask *task,
 {
     UfoGeneralBackprojectTaskPrivate *priv;
     UfoRequisition in_req;
-    gfloat start, stop, step;
     GValue g_value_int = G_VALUE_INIT;
     g_value_init (&g_value_int, G_TYPE_INT);
 
     priv = UFO_GENERAL_BACKPROJECT_TASK_GET_PRIVATE (task);
     g_assert (priv->region->n_values == 3);
-    requisition->n_dims = 3;
+    requisition->n_dims = 2;
     ufo_buffer_get_requisition (inputs[0], &in_req);
 
     if (EXTRACT_INT (priv->region_x, 2) == 0) {
@@ -822,21 +1160,8 @@ ufo_general_backproject_task_get_requisition (UfoTask *task,
     } else {
         requisition->dims[1] = REGION_SIZE (priv->region_y);
     }
-    if (are_almost_equal (EXTRACT_FLOAT (priv->region, 2), 0.0f)) {
-        /* Conservative approach, reconstruct just one slice */
-        start = 0.0f;
-        stop = 1.0f;
-        step = 1.0f;
-    } else {
-        start = EXTRACT_FLOAT (priv->region, 0);
-        stop = EXTRACT_FLOAT (priv->region, 1);
-        step = EXTRACT_FLOAT (priv->region, 2);
-    }
 
-    requisition->dims[2] = (gint) ceil ((stop - start) / step);
-
-    g_debug ("requisition (x, y, z): %lu %lu %lu", requisition->dims[0],
-             requisition->dims[1], requisition->dims[2]);
+    g_log ("gbp", G_LOG_LEVEL_DEBUG, "requisition (x, y, z): %lu %lu %d", requisition->dims[0], requisition->dims[1], 1);
 }
 
 static guint
@@ -851,7 +1176,7 @@ ufo_general_backproject_task_get_num_dimensions (UfoTask *task,
 {
     g_return_val_if_fail (input == 0, 0);
 
-    return 3;
+    return 2;
 }
 
 static UfoTaskMode
@@ -862,10 +1187,141 @@ ufo_general_backproject_task_get_mode (UfoTask *task)
 
 static gboolean
 ufo_general_backproject_task_process (UfoTask *task,
-                         UfoBuffer **inputs,
-                         UfoBuffer *output,
-                         UfoRequisition *requisition)
+                                      UfoBuffer **inputs,
+                                      UfoBuffer *output,
+                                      UfoRequisition *requisition)
 {
+    UfoGeneralBackprojectTaskPrivate *priv;
+    UfoRequisition in_req;
+    UfoGpuNode *node;
+    UfoProfiler *profiler;
+    guint i, index, ki;
+    guint burst;
+    gsize slice_size, chunk_size, volume_size, projections_size;
+    gdouble region_start, region_stop, region_step;
+    cl_int cl_error;
+    GValue *max_global_mem_size_gvalue, *max_mem_alloc_size_gvalue;
+    cl_ulong max_global_mem_size, max_mem_alloc_size;
+    cl_kernel kernel;
+    cl_command_queue cmd_queue;
+    gdouble rot_angle;
+    cl_float f_tomo_angle[2];
+    cl_double d_tomo_angle[2];
+    cl_int cumulate;
+    const gsize local_work_size[3] = {16, 8, 8};
+    gsize global_work_size[3];
+    typedef void (*CreateRegionFunc) (UfoGeneralBackprojectTaskPrivate *, const cl_command_queue,
+                                      const gdouble, const gdouble);
+    typedef void (*SetStaticArgsFunc) (UfoGeneralBackprojectTaskPrivate *, UfoRequisition *, const cl_kernel);
+    CreateRegionFunc create_regions[2] = {create_regions_cl_float, create_regions_cl_double};
+    SetStaticArgsFunc set_static_args[2] = {set_static_args_cl_float, set_static_args_cl_double};
+
+    priv = UFO_GENERAL_BACKPROJECT_TASK_GET_PRIVATE (task);
+    node = UFO_GPU_NODE (ufo_task_node_get_proc_node (UFO_TASK_NODE (task)));
+    cmd_queue = ufo_gpu_node_get_cmd_queue (node);
+    ufo_buffer_get_requisition (inputs[0], &in_req);
+    profiler = ufo_task_node_get_profiler (UFO_TASK_NODE (task));
+    if (priv->count >= priv->num_projections / BURST * BURST) {
+        kernel = priv->rest_kernel;
+        burst = priv->num_projections % BURST;
+    } else {
+        kernel = priv->kernel;
+        burst = BURST;
+    }
+
+    index = priv->count % burst;
+    if (are_almost_equal (EXTRACT_DOUBLE (priv->region, 2), 0.0f)) {
+        /* Conservative approach, reconstruct just one slice */
+        region_start = 0.0f;
+        region_stop = 1.0f;
+        region_step = 1.0f;
+    } else {
+        region_start = EXTRACT_DOUBLE (priv->region, 0);
+        region_stop = EXTRACT_DOUBLE (priv->region, 1);
+        region_step = EXTRACT_DOUBLE (priv->region, 2);
+    }
+    if (!priv->num_slices) {
+        priv->num_slices = (gsize) ceil ((region_stop - region_start) / region_step);
+    }
+    max_global_mem_size_gvalue = ufo_gpu_node_get_info (node, UFO_GPU_NODE_INFO_GLOBAL_MEM_SIZE);
+    max_global_mem_size = g_value_get_ulong (max_global_mem_size_gvalue);
+    g_value_unset (max_global_mem_size_gvalue);
+    projections_size = BURST * in_req.dims[0] * in_req.dims[1] * sizeof (cl_float);
+    slice_size = requisition->dims[0] * requisition->dims[1] * get_type_size (priv->store_type);
+    volume_size = slice_size * priv->num_slices;
+    max_mem_alloc_size_gvalue = ufo_gpu_node_get_info (node, UFO_GPU_NODE_INFO_MAX_MEM_ALLOC_SIZE);
+    max_mem_alloc_size = g_value_get_ulong (max_mem_alloc_size_gvalue);
+    g_value_unset (max_mem_alloc_size_gvalue);
+    priv->num_slices_per_chunk = (guint) floor ((gdouble) MIN (max_mem_alloc_size, volume_size) / ((gdouble) slice_size));
+    global_work_size[0] = requisition->dims[0] % local_work_size[0] ?
+                          NEXT_DIVISOR (requisition->dims[0], local_work_size[0]) :
+                          requisition->dims[0];
+    global_work_size[1] = requisition->dims[1] % local_work_size[1] ?
+                          NEXT_DIVISOR (requisition->dims[1], local_work_size[1]) :
+                          requisition->dims[1];
+    global_work_size[2] = priv->num_slices_per_chunk % local_work_size[2] ?
+                          NEXT_DIVISOR (priv->num_slices_per_chunk, local_work_size[2]) :
+                          priv->num_slices_per_chunk;
+    if (!priv->count) {
+        g_log ("gbp", G_LOG_LEVEL_DEBUG, "Global work size: %lu %lu %lu, local: %lu %lu %lu",
+               global_work_size[0], global_work_size[1], global_work_size[2],
+               local_work_size[0], local_work_size[1], local_work_size[2]);
+    }
+    if (projections_size + volume_size > max_global_mem_size) {
+        g_warning ("Volume size doesn't fit to memory");
+        return FALSE;
+    }
+    if (!priv->chunks) {
+        /* Create subvolumes (because one large volume might be larger than the maximum allocatable memory chunk */
+        priv->num_chunks = (priv->num_slices - 1) / priv->num_slices_per_chunk + 1;
+        chunk_size = priv->num_slices_per_chunk * slice_size;
+        g_log ("gbp", G_LOG_LEVEL_DEBUG, "Max alloc size: %lu, max global size: %lu", max_mem_alloc_size, max_global_mem_size);
+        g_log ("gbp", G_LOG_LEVEL_DEBUG, "Chunk size: %lu, num chunks: %d, num slices per chunk: %u",
+               chunk_size, priv->num_chunks, priv->num_slices_per_chunk);
+        g_log ("gbp", G_LOG_LEVEL_DEBUG, "Volume size: %lu, num slices: %u", volume_size, priv->num_slices);
+        priv->chunks = (cl_mem *) g_malloc0 (priv->num_chunks * sizeof (cl_mem));
+        priv->cl_regions = (cl_mem *) g_malloc0 (priv->num_chunks * sizeof (cl_mem));
+        for (i = 0; i < priv->num_chunks; i++) {
+            g_log ("gbp", G_LOG_LEVEL_DEBUG, "Creating chunk %d with size %lu",
+                   i, MIN (volume_size, (i + 1) * chunk_size) - i * chunk_size);
+            priv->chunks[i] = clCreateBuffer (priv->context,
+                                              CL_MEM_WRITE_ONLY,
+                                              MIN (volume_size, (i + 1) * chunk_size) - i * chunk_size,
+                                              NULL,
+                                              &cl_error);
+            UFO_RESOURCES_CHECK_CLERR (cl_error);
+        }
+        create_images (priv, in_req.dims[0], in_req.dims[1]);
+        create_regions[priv->compute_type] (priv, cmd_queue, region_start, region_step);
+        set_static_args[priv->compute_type] (priv, requisition, priv->kernel);
+        set_static_args[priv->compute_type] (priv, requisition, priv->rest_kernel);
+    }
+
+    /* Setup tomographic rotation angle dependent arguments */
+    copy_to_image (cmd_queue, inputs[0], priv->projections[index], in_req.dims[0], in_req.dims[1]);
+    ki = STATIC_ARG_OFFSET + burst;
+    rot_angle = ((gdouble) priv->count) / priv->num_projections * priv->overall_angle;
+    if (priv->compute_type == CT_FLOAT) {
+        fill_sincos_cl_float (f_tomo_angle, rot_angle);
+        UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (kernel, ki + index, sizeof (cl_float2), f_tomo_angle));
+    } else {
+        fill_sincos_cl_double (d_tomo_angle, rot_angle);
+        UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (kernel, ki + index, sizeof (cl_double2), d_tomo_angle));
+    }
+
+    if (index + 1 == burst) {
+        ki += index + 1;
+        cumulate = priv->count > burst;
+        UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (kernel, ki++, sizeof (cl_int), &cumulate));
+        for (i = 0; i < priv->num_chunks; i++) {
+            UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (kernel, ki, sizeof (cl_mem), &priv->chunks[i]));
+            UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (kernel, ki + 1, sizeof (cl_mem), &priv->cl_regions[i]));
+            ufo_profiler_call (profiler, cmd_queue, kernel, 3, global_work_size, local_work_size);
+        }
+    }
+
+    priv->count++;
+
     return TRUE;
 }
 
@@ -874,13 +1330,48 @@ ufo_general_backproject_task_generate (UfoTask *task,
                          UfoBuffer *output,
                          UfoRequisition *requisition)
 {
-    UfoGeneralBackprojectTaskPrivate *priv = UFO_GENERAL_BACKPROJECT_TASK_GET_PRIVATE (task);
+    UfoGeneralBackprojectTaskPrivate *priv;
+    UfoGpuNode *node;
+    cl_command_queue cmd_queue;
+    cl_mem out_mem;
+    guint chunk_index;
+    /* TODO: handle other data types */
+    size_t bpp;
+    size_t src_row_pitch, src_slice_pitch;
+    size_t src_origin[3] = {0, 0, 0};
+    size_t dst_origin[3] = {0, 0, 0};
+    size_t region[3] = {0, 0, 1};
 
-    if (priv->generated) {
+    priv = UFO_GENERAL_BACKPROJECT_TASK_GET_PRIVATE (task);
+    node = UFO_GPU_NODE (ufo_task_node_get_proc_node (UFO_TASK_NODE (task)));
+    cmd_queue = ufo_gpu_node_get_cmd_queue (node);
+    out_mem = ufo_buffer_get_device_array (output, cmd_queue);
+    chunk_index = priv->generated / priv->num_slices_per_chunk;
+    bpp = get_type_size (priv->store_type);
+
+    if (priv->generated >= priv->num_slices) {
         return FALSE;
     }
 
-    priv->generated = TRUE;
+    src_row_pitch = requisition->dims[0] * bpp;
+    src_slice_pitch = src_row_pitch * requisition->dims[1];
+    src_origin[2] = priv->generated % priv->num_slices_per_chunk;
+    region[0] = src_row_pitch;
+    region[1] = requisition->dims[1];
+    g_log ("gbp", G_LOG_LEVEL_DEBUG, "Generating slice %u from chunk %u", priv->generated + 1, chunk_index);
+    g_log ("gbp", G_LOG_LEVEL_DEBUG, "src_origin: %lu %lu %lu", src_origin[0], src_origin[1], src_origin[2]);
+    g_log ("gbp", G_LOG_LEVEL_DEBUG, "region: %lu %lu %lu", region[0], region[1], region[2]);
+    g_log ("gbp", G_LOG_LEVEL_DEBUG, "row pitch %lu, slice pitch %lu", src_row_pitch, src_slice_pitch);
+
+    UFO_RESOURCES_CHECK_CLERR (clEnqueueCopyBufferRect (cmd_queue,
+                                                        priv->chunks[chunk_index], out_mem,
+                                                        src_origin, dst_origin, region,
+                                                        src_row_pitch, src_slice_pitch,
+                                                        src_row_pitch, 0,
+                                                        0, NULL, NULL));
+
+    /* TODO: could we do priv->count--? */
+    priv->generated++;
 
     return TRUE;
 }
@@ -899,16 +1390,19 @@ ufo_general_backproject_task_set_property (GObject *object,
         case PROP_PARAMETER:
             priv->parameter = g_value_get_enum (value);
             break;
+        case PROP_Z:
+            priv->z = g_value_get_double (value);
+            break;
         case PROP_REGION:
             array = (GValueArray *) g_value_get_boxed (value);
             g_value_array_free (priv->region);
             priv->region = g_value_array_copy (array);
             break;
-        case PROP_region_x:
+        case PROP_REGION_X:
             array = (GValueArray *) g_value_get_boxed (value);
             set_region (array, &priv->region_x);
             break;
-        case PROP_region_y:
+        case PROP_REGION_Y:
             array = (GValueArray *) g_value_get_boxed (value);
             set_region (array, &priv->region_y);
             break;
@@ -1010,7 +1504,16 @@ ufo_general_backproject_task_set_property (GObject *object,
             priv->store_type = g_value_get_enum (value);
             break;
         case PROP_OVERALL_ANGLE:
-            priv->overall_angle = g_value_get_float (value);
+            priv->overall_angle = g_value_get_double (value);
+            break;
+        case PROP_ADDRESSING_MODE:
+            priv->addressing_mode = g_value_get_enum (value);
+            break;
+        case PROP_GRAY_MAP_MIN:
+            priv->gray_map_min = g_value_get_double (value);
+            break;
+        case PROP_GRAY_MAP_MAX:
+            priv->gray_map_max = g_value_get_double (value);
             break;
         default:
             G_OBJECT_WARN_INVALID_PROPERTY_ID (object, property_id, pspec);
@@ -1030,13 +1533,16 @@ ufo_general_backproject_task_get_property (GObject *object,
         case PROP_PARAMETER:
             g_value_set_enum (value, priv->parameter);
             break;
+        case PROP_Z:
+            g_value_set_double (value, priv->z);
+            break;
         case PROP_REGION:
             g_value_set_boxed (value, priv->region);
             break;
-        case PROP_region_x:
+        case PROP_REGION_X:
             g_value_set_boxed (value, priv->region_x);
             break;
-        case PROP_region_y:
+        case PROP_REGION_Y:
             g_value_set_boxed (value, priv->region_y);
             break;
         case PROP_CENTER_X:
@@ -1103,7 +1609,16 @@ ufo_general_backproject_task_get_property (GObject *object,
             g_value_set_enum (value, priv->store_type);
             break;
         case PROP_OVERALL_ANGLE:
-            g_value_set_float (value, priv->overall_angle);
+            g_value_set_double (value, priv->overall_angle);
+            break;
+        case PROP_GRAY_MAP_MIN:
+            g_value_set_double (value, priv->gray_map_min);
+            break;
+        case PROP_GRAY_MAP_MAX:
+            g_value_set_double (value, priv->gray_map_max);
+            break;
+        case PROP_ADDRESSING_MODE:
+            g_value_set_enum (value, priv->addressing_mode);
             break;
         default:
             G_OBJECT_WARN_INVALID_PROPERTY_ID (object, property_id, pspec);
@@ -1114,6 +1629,7 @@ ufo_general_backproject_task_get_property (GObject *object,
 static void
 ufo_general_backproject_task_finalize (GObject *object)
 {
+    guint i;
     UfoGeneralBackprojectTaskPrivate *priv = UFO_GENERAL_BACKPROJECT_TASK_GET_PRIVATE (object);
 
     g_value_array_free (priv->region);
@@ -1137,6 +1653,29 @@ ufo_general_backproject_task_finalize (GObject *object)
     g_value_array_free (priv->volume_angle_y);
     g_value_array_free (priv->volume_angle_z);
 
+    for (i = 0; i < BURST; i++) {
+        if (priv->projections[i] != NULL) {
+            UFO_RESOURCES_CHECK_CLERR (clReleaseMemObject (priv->projections[i]));
+            priv->projections[i] = NULL;
+        }
+    }
+
+    if (priv->chunks) {
+        for (i = 0; i < priv->num_chunks; i++) {
+            UFO_RESOURCES_CHECK_CLERR (clReleaseMemObject (priv->chunks[i]));
+        }
+        g_free (priv->chunks);
+        priv->chunks = NULL;
+    }
+
+    if (priv->cl_regions) {
+        for (i = 0; i < priv->num_chunks; i++) {
+            UFO_RESOURCES_CHECK_CLERR (clReleaseMemObject (priv->cl_regions[i]));
+        }
+        g_free (priv->cl_regions);
+        priv->cl_regions = NULL;
+    }
+
     if (priv->kernel) {
         UFO_RESOURCES_CHECK_CLERR (clReleaseKernel (priv->kernel));
         priv->kernel = NULL;
@@ -1149,6 +1688,10 @@ ufo_general_backproject_task_finalize (GObject *object)
     if (priv->context) {
         UFO_RESOURCES_CHECK_CLERR (clReleaseContext (priv->context));
         priv->context = NULL;
+    }
+    if (priv->sampler) {
+        UFO_RESOURCES_CHECK_CLERR (clReleaseSampler (priv->sampler));
+        priv->sampler = NULL;
     }
 
     G_OBJECT_CLASS (ufo_general_backproject_task_parent_class)->finalize (object);
@@ -1183,13 +1726,13 @@ ufo_general_backproject_task_class_init (UfoGeneralBackprojectTaskClass *klass)
                                                 (gint) 0,
                                                 G_PARAM_READWRITE);
 
-    GParamSpec *float_region_vals = g_param_spec_float ("float-region-values",
-                                                        "Float Region values",
-                                                        "Elements in float regions",
-                                                        -INFINITY,
-                                                        INFINITY,
-                                                        0.0f,
-                                                        G_PARAM_READWRITE);
+    GParamSpec *double_region_vals = g_param_spec_double ("double-region-values",
+                                                          "Double Region values",
+                                                          "Elements in double regions",
+                                                          -G_MAXDOUBLE,
+                                                          G_MAXDOUBLE,
+                                                          0.0,
+                                                          G_PARAM_READWRITE);
 
     properties[PROP_PARAMETER] =
         g_param_spec_enum ("parameter",
@@ -1199,21 +1742,28 @@ ufo_general_backproject_task_class_init (UfoGeneralBackprojectTaskClass *klass)
             PARAMETER_Z,
             G_PARAM_READWRITE);
 
+    properties[PROP_Z] =
+        g_param_spec_double ("z",
+            "Z coordinate of the reconstructed slice",
+            "Z coordinate of the reconstructed slice",
+            -G_MAXDOUBLE, G_MAXDOUBLE, 0.0,
+            G_PARAM_READWRITE);
+
     properties[PROP_REGION] =
         g_param_spec_value_array ("region",
             "Region for the parameter along z-axis as (from, to, step)",
             "Region for the parameter along z-axis as (from, to, step)",
-            float_region_vals,
+            double_region_vals,
             G_PARAM_READWRITE);
 
-    properties[PROP_region_x] =
+    properties[PROP_REGION_X] =
         g_param_spec_value_array ("x-region",
             "X region for reconstruction (horizontal axis) as (from, to, step)",
             "X region for reconstruction (horizontal axis) as (from, to, step)",
             region_vals,
             G_PARAM_READWRITE);
 
-    properties[PROP_region_y] =
+    properties[PROP_REGION_Y] =
         g_param_spec_value_array ("y-region",
             "Y region for reconstruction (beam direction axis) as (from, to, step)",
             "Y region for reconstruction (beam direction axis) as (from, to, step)",
@@ -1224,119 +1774,119 @@ ufo_general_backproject_task_class_init (UfoGeneralBackprojectTaskClass *klass)
         g_param_spec_value_array ("center-x",
                                   "Global x center (horizontal in a projection) of the volume with respect to projections",
                                   "Global x center (horizontal in a projection) of the volume with respect to projections",
-                                  float_region_vals,
+                                  double_region_vals,
                                   G_PARAM_READWRITE);
 
     properties[PROP_CENTER_Z] =
         g_param_spec_value_array ("center-z",
                                   "Global z center (vertical in a projection) of the volume with respect to projections",
                                   "Global z center (vertical in a projection) of the volume with respect to projections",
-                                  float_region_vals,
+                                  double_region_vals,
                                   G_PARAM_READWRITE);
 
     properties[PROP_SOURCE_POSITION_X] =
         g_param_spec_value_array ("source-position-x",
                                   "X source position (horizontal) in global coordinates [pixels]",
                                   "X source position (horizontal) in global coordinates [pixels]",
-                                  float_region_vals,
+                                  double_region_vals,
                                   G_PARAM_READWRITE);
 
     properties[PROP_SOURCE_POSITION_Y] =
         g_param_spec_value_array ("source-position-y",
                                   "Y source position (beam direction) in global coordinates [pixels]",
                                   "Y source position (beam direction) in global coordinates [pixels]",
-                                  float_region_vals,
+                                  double_region_vals,
                                   G_PARAM_READWRITE);
 
     properties[PROP_SOURCE_POSITION_Z] =
         g_param_spec_value_array ("source-position-z",
                                   "Z source position (vertical) in global coordinates [pixels]",
                                   "Z source position (vertical) in global coordinates [pixels]",
-                                  float_region_vals,
+                                  double_region_vals,
                                   G_PARAM_READWRITE);
 
     properties[PROP_DETECTOR_POSITION_X] =
         g_param_spec_value_array ("detector-position-x",
                                   "X detector position (horizontal) in global coordinates [pixels]",
                                   "X detector position (horizontal) in global coordinates [pixels]",
-                                  float_region_vals,
+                                  double_region_vals,
                                   G_PARAM_READWRITE);
 
     properties[PROP_DETECTOR_POSITION_Y] =
         g_param_spec_value_array ("detector-position-y",
                                   "Y detector position (along beam direction) in global coordinates [pixels]",
                                   "Y detector position (along beam direction) in global coordinates [pixels]",
-                                  float_region_vals,
+                                  double_region_vals,
                                   G_PARAM_READWRITE);
 
     properties[PROP_DETECTOR_POSITION_Z] =
         g_param_spec_value_array ("detector-position-z",
                                   "Z detector position (vertical) in global coordinates [pixels]",
                                   "Z detector position (vertical) in global coordinates [pixels]",
-                                  float_region_vals,
+                                  double_region_vals,
                                   G_PARAM_READWRITE);
 
     properties[PROP_DETECTOR_ANGLE_X] =
         g_param_spec_value_array("detector-angle-x",
                                  "Detector rotation around the x axis [rad] (horizontal)",
                                  "Detector rotation around the x axis [rad] (horizontal)",
-                                 float_region_vals,
+                                 double_region_vals,
                                  G_PARAM_READWRITE);
 
     properties[PROP_DETECTOR_ANGLE_Y] =
         g_param_spec_value_array("detector-angle-y",
                                  "Detector rotation around the y axis [rad] (along beam direction)",
                                  "Detector rotation around the y axis [rad] (balong eam direction)",
-                                 float_region_vals,
+                                 double_region_vals,
                                  G_PARAM_READWRITE);
 
     properties[PROP_DETECTOR_ANGLE_Z] =
         g_param_spec_value_array("detector-angle-z",
                                  "Detector rotation around the z axis [rad] (vertical)",
                                  "Detector rotation around the z axis [rad] (vertical)",
-                                 float_region_vals,
+                                 double_region_vals,
                                  G_PARAM_READWRITE);
 
     properties[PROP_AXIS_ANGLE_X] =
         g_param_spec_value_array("axis-angle-x",
                                  "Rotation axis rotation around the x axis [rad] (laminographic angle, 0 = tomography)",
                                  "Rotation axis rotation around the x axis [rad] (laminographic angle, 0 = tomography)",
-                                 float_region_vals,
+                                 double_region_vals,
                                  G_PARAM_READWRITE);
 
     properties[PROP_AXIS_ANGLE_Y] =
         g_param_spec_value_array("axis-angle-y",
                                  "Rotation axis rotation around the y axis [rad] (along beam direction)",
                                  "Rotation axis rotation around the y axis [rad] (along beam direction)",
-                                 float_region_vals,
+                                 double_region_vals,
                                  G_PARAM_READWRITE);
 
     properties[PROP_AXIS_ANGLE_Z] =
         g_param_spec_value_array("axis-angle-z",
                                  "Rotation axis rotation around the z axis [rad] (vertical)",
                                  "Rotation axis rotation around the z axis [rad] (vertical)",
-                                 float_region_vals,
+                                 double_region_vals,
                                  G_PARAM_READWRITE);
 
     properties[PROP_VOLUME_ANGLE_X] =
         g_param_spec_value_array("volume-angle-x",
                                  "Volume rotation around the x axis [rad] (horizontal)",
                                  "Volume rotation around the x axis [rad] (horizontal)",
-                                 float_region_vals,
+                                 double_region_vals,
                                  G_PARAM_READWRITE);
 
     properties[PROP_VOLUME_ANGLE_Y] =
         g_param_spec_value_array("volume-angle-y",
                                  "Volume rotation around the y axis [rad] (along beam direction)",
                                  "Volume rotation around the y axis [rad] (along beam direction)",
-                                 float_region_vals,
+                                 double_region_vals,
                                  G_PARAM_READWRITE);
 
     properties[PROP_VOLUME_ANGLE_Z] =
         g_param_spec_value_array("volume-angle-z",
                                  "Volume rotation around the z axis [rad] (vertical)",
                                  "Volume rotation around the z axis [rad] (vertical)",
-                                 float_region_vals,
+                                 double_region_vals,
                                  G_PARAM_READWRITE);
 
     properties[PROP_COMPUTE_TYPE] =
@@ -1344,9 +1894,17 @@ ufo_general_backproject_task_class_init (UfoGeneralBackprojectTaskClass *klass)
                              "Data type for performing kernel math operations",
                              "Data type for performing kernel math operations "
                              "(\"half\", \"float\", \"double\")",
-                             g_enum_register_static ("compute-type", ft_values),
+                             g_enum_register_static ("compute-type", compute_type_values),
                              FT_FLOAT,
                              G_PARAM_READWRITE);
+
+    properties[PROP_ADDRESSING_MODE] =
+        g_param_spec_enum ("addressing-mode",
+            "Outlier treatment (\"none\", \"clamp\", \"clamp_to_edge\", \"repeat\")",
+            "Outlier treatment (\"none\", \"clamp\", \"clamp_to_edge\", \"repeat\")",
+            g_enum_register_static ("bp_addressing_mode", addressing_values),
+            CL_ADDRESS_CLAMP,
+            G_PARAM_READWRITE);
 
     properties[PROP_RESULT_TYPE] =
         g_param_spec_enum ("result-type",
@@ -1367,11 +1925,25 @@ ufo_general_backproject_task_class_init (UfoGeneralBackprojectTaskClass *klass)
                              G_PARAM_READWRITE);
 
     properties[PROP_OVERALL_ANGLE] =
-        g_param_spec_float ("overall-angle",
+        g_param_spec_double ("overall-angle",
             "Angle covered by all projections [rad]",
             "Angle covered by all projections [rad] (can be negative for negative steps "
             "in case only num-projections is specified",
-            -G_MAXFLOAT, G_MAXFLOAT, 2 * G_PI,
+            -G_MAXDOUBLE, G_MAXDOUBLE, 2 * G_PI,
+            G_PARAM_READWRITE);
+
+    properties[PROP_GRAY_MAP_MIN] =
+        g_param_spec_double ("gray-map-min",
+            "Gray valye which maps to 0 in case of integer store type",
+            "Gray valye which maps to 0 in case of integer store type",
+            -G_MAXDOUBLE, G_MAXDOUBLE, 0,
+            G_PARAM_READWRITE);
+
+    properties[PROP_GRAY_MAP_MAX] =
+        g_param_spec_double ("gray-map-max",
+            "Gray valye which maps to maximum of the chosen integer type in case of integer store type",
+            "Gray valye which maps to maximum of the chosen integer type in case of integer store type",
+            -G_MAXDOUBLE, G_MAXDOUBLE, 0,
             G_PARAM_READWRITE);
 
     properties[PROP_NUM_PROJECTIONS] =
@@ -1392,20 +1964,24 @@ ufo_general_backproject_task_init(UfoGeneralBackprojectTask *self)
 {
     gint i;
     self->priv = UFO_GENERAL_BACKPROJECT_TASK_GET_PRIVATE(self);
-    GValue float_value = G_VALUE_INIT;
+    GValue double_value = G_VALUE_INIT;
     GValue int_value = G_VALUE_INIT;
-    g_value_init (&float_value, G_TYPE_FLOAT);
+    g_value_init (&double_value, G_TYPE_DOUBLE);
     g_value_init (&int_value, G_TYPE_INT);
-    g_value_set_float (&float_value, 0.0f);
+    g_value_set_double (&double_value, 0.0);
     g_value_set_int (&int_value, 0);
 
     /* Scalars */
     self->priv->parameter = PARAMETER_Z;
+    self->priv->z = 0.0;
     self->priv->num_projections = 0;
-    self->priv->compute_type = FT_FLOAT;
+    self->priv->compute_type = CT_FLOAT;
     self->priv->result_type = FT_FLOAT;
-    self->priv->store_type = FT_FLOAT;
+    self->priv->store_type = ST_FLOAT;
     self->priv->overall_angle = 2 * G_PI;
+    self->priv->addressing_mode = CL_ADDRESS_CLAMP;
+    self->priv->gray_map_min = 0.0;
+    self->priv->gray_map_max = 0.0;
 
     /* Value arrays */
     self->priv->region = g_value_array_new (3);
@@ -1430,36 +2006,38 @@ ufo_general_backproject_task_init(UfoGeneralBackprojectTask *self)
     self->priv->detector_angle_z = g_value_array_new (1);
 
     for (i = 0; i < 3; i++) {
-        g_value_array_insert (self->priv->region, i, &float_value);
+        g_value_array_insert (self->priv->region, i, &double_value);
         g_value_array_insert (self->priv->region_x, i, &int_value);
         g_value_array_insert (self->priv->region_y, i, &int_value);
     }
-    g_value_array_insert (self->priv->center_x, 0, &float_value);
-    g_value_array_insert (self->priv->center_z, 0, &float_value);
+    g_value_array_insert (self->priv->center_x, 0, &double_value);
+    g_value_array_insert (self->priv->center_z, 0, &double_value);
 
-    g_value_array_insert (self->priv->axis_angle_x, 0, &float_value);
-    g_value_array_insert (self->priv->axis_angle_y, 0, &float_value);
-    g_value_array_insert (self->priv->axis_angle_z, 0, &float_value);
+    g_value_array_insert (self->priv->axis_angle_x, 0, &double_value);
+    g_value_array_insert (self->priv->axis_angle_y, 0, &double_value);
+    g_value_array_insert (self->priv->axis_angle_z, 0, &double_value);
 
-    g_value_array_insert (self->priv->volume_angle_x, 0, &float_value);
-    g_value_array_insert (self->priv->volume_angle_y, 0, &float_value);
-    g_value_array_insert (self->priv->volume_angle_z, 0, &float_value);
+    g_value_array_insert (self->priv->volume_angle_x, 0, &double_value);
+    g_value_array_insert (self->priv->volume_angle_y, 0, &double_value);
+    g_value_array_insert (self->priv->volume_angle_z, 0, &double_value);
 
-    g_value_array_insert (self->priv->source_position_x, 0, &float_value);
-    g_value_array_insert (self->priv->source_position_z, 0, &float_value);
-    g_value_set_float (&float_value, -INFINITY);
-    g_value_array_insert (self->priv->source_position_y, 0, &float_value);
+    g_value_array_insert (self->priv->source_position_x, 0, &double_value);
+    g_value_array_insert (self->priv->source_position_z, 0, &double_value);
+    g_value_set_double (&double_value, -INFINITY);
+    g_value_array_insert (self->priv->source_position_y, 0, &double_value);
 
-    g_value_set_float (&float_value, 0.0f);
-    g_value_array_insert (self->priv->detector_position_x, 0, &float_value);
-    g_value_array_insert (self->priv->detector_position_y, 0, &float_value);
-    g_value_array_insert (self->priv->detector_position_z, 0, &float_value);
-    g_value_array_insert (self->priv->detector_angle_x, 0, &float_value);
-    g_value_array_insert (self->priv->detector_angle_z, 0, &float_value);
-    g_value_array_insert (self->priv->detector_angle_y, 0, &float_value);
+    g_value_set_double (&double_value, 0.0f);
+    g_value_array_insert (self->priv->detector_position_x, 0, &double_value);
+    g_value_array_insert (self->priv->detector_position_y, 0, &double_value);
+    g_value_array_insert (self->priv->detector_position_z, 0, &double_value);
+    g_value_array_insert (self->priv->detector_angle_x, 0, &double_value);
+    g_value_array_insert (self->priv->detector_angle_z, 0, &double_value);
+    g_value_array_insert (self->priv->detector_angle_y, 0, &double_value);
 
     /* Private */
+    self->priv->num_slices = 0;
+    self->priv->num_slices_per_chunk = 0;
     self->priv->count = 0;
-    self->priv->generated = FALSE;
+    self->priv->generated = 0;
 }
 /*}}}*/

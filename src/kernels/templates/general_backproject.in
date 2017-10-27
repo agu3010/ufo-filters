@@ -2,15 +2,11 @@
 #define rotate_y(trig, point) ((cfloat3)(mad ((trig).y, (point).x, ((trig).x * (point).z)), ((point).y), mad (-(trig).x, (point).x, ((trig).y * (point).z))))
 #define rotate_z(trig, point) ((cfloat3)(mad ((trig).y, (point).x, - ((trig).x * (point).y)), mad ((trig).x, (point).x, ((trig).y * (point).y)), ((point).z)))
 
-kernel void backproject (
-%tmpl%%tmpl%
-                         global stype *volume,
-                         constant cfloat2 *region,
-                         const sampler_t sampler,
+kernel void backproject (const sampler_t sampler,
                          const int3 real_size,
                          const cfloat2 x_region,
                          const cfloat2 y_region,
-                         const int z_number,
+                         const cfloat slice_z_position,
                          cfloat2 axis_x,
                          cfloat2 axis_y,
                          cfloat2 axis_z,
@@ -25,7 +21,10 @@ kernel void backproject (
                          cfloat3 detector_position,
                          const cfloat norm_factor,
                          const cfloat2 gray_limit,
-                         const int cumulate)
+%tmpl%%tmpl%
+                         const int cumulate,
+                         global stype *volume,
+                         constant cfloat2 *region)
 {
     int idx = get_global_id (0);
     int idy = get_global_id (1);
@@ -37,7 +36,7 @@ kernel void backproject (
     if (idx < real_size.x && idy < real_size.y && idz < real_size.z) {
         voxel_0.x = mad((cfloat) idx, x_region.y, x_region.x);
         voxel_0.y = mad((cfloat) idy, y_region.y, y_region.x);
-        voxel_0.z = z_number;
+        voxel_0.z = slice_z_position;
 
         // assign z-coordinate to the chosen parameter i.e. param = region[idz];
         %tmpl%
