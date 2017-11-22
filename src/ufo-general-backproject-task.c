@@ -106,7 +106,7 @@ set_static_args_##type (UfoGeneralBackprojectTaskPrivate *priv,                 
          volume_x[2], volume_y[2], volume_z[2], detector_x[2], detector_y[2], detector_z[2],                             \
          gray_limit[2], center_position[4], source_position[4], detector_position[4], norm_factor;                       \
     guint burst, j, i = 0;                                                                                               \
-    const gint real_size[4] = {requisition->dims[0], requisition->dims[1], (gint) priv->num_slices, 0};                  \
+    const gint real_size[4] = {requisition->dims[0], requisition->dims[1], (gint) priv->num_slices_per_chunk, 0};        \
     gdouble gray_delta_recip = (gdouble) get_integer_maximum (st_values[priv->store_type].value_nick) /                  \
                                (priv->gray_map_max - priv->gray_map_min);                                                \
     norm_factor = 2 * G_PI / priv->num_projections;                                                                      \
