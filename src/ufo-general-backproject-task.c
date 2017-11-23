@@ -1222,57 +1222,49 @@ ufo_general_backproject_task_process (UfoTask *task,
     }
 
     index = priv->count % burst;
-    if (are_almost_equal (EXTRACT_DOUBLE (priv->region, 2), 0.0f)) {
-        /* Conservative approach, reconstruct just one slice */
-        region_start = 0.0f;
-        region_stop = 1.0f;
-        region_step = 1.0f;
-    } else {
-        region_start = EXTRACT_DOUBLE (priv->region, 0);
-        region_stop = EXTRACT_DOUBLE (priv->region, 1);
-        region_step = EXTRACT_DOUBLE (priv->region, 2);
-    }
-    if (!priv->num_slices) {
-        priv->num_slices = (gsize) ceil ((region_stop - region_start) / region_step);
-    }
-    max_global_mem_size_gvalue = ufo_gpu_node_get_info (node, UFO_GPU_NODE_INFO_GLOBAL_MEM_SIZE);
-    max_global_mem_size = g_value_get_ulong (max_global_mem_size_gvalue);
-    g_value_unset (max_global_mem_size_gvalue);
-    projections_size = BURST * in_req.dims[0] * in_req.dims[1] * sizeof (cl_float);
-    slice_size = requisition->dims[0] * requisition->dims[1] * get_type_size (priv->store_type);
-    volume_size = slice_size * priv->num_slices;
-    max_mem_alloc_size_gvalue = ufo_gpu_node_get_info (node, UFO_GPU_NODE_INFO_MAX_MEM_ALLOC_SIZE);
-    max_mem_alloc_size = g_value_get_ulong (max_mem_alloc_size_gvalue);
-    g_value_unset (max_mem_alloc_size_gvalue);
-    priv->num_slices_per_chunk = (guint) floor ((gdouble) MIN (max_mem_alloc_size, volume_size) / ((gdouble) slice_size));
-    global_work_size[0] = requisition->dims[0] % local_work_size[0] ?
-                          NEXT_DIVISOR (requisition->dims[0], local_work_size[0]) :
-                          requisition->dims[0];
-    global_work_size[1] = requisition->dims[1] % local_work_size[1] ?
-                          NEXT_DIVISOR (requisition->dims[1], local_work_size[1]) :
-                          requisition->dims[1];
-    global_work_size[2] = priv->num_slices_per_chunk % local_work_size[2] ?
-                          NEXT_DIVISOR (priv->num_slices_per_chunk, local_work_size[2]) :
-                          priv->num_slices_per_chunk;
-    if (!priv->count) {
-        g_log ("gbp", G_LOG_LEVEL_DEBUG, "Global work size: %lu %lu %lu, local: %lu %lu %lu",
-               global_work_size[0], global_work_size[1], global_work_size[2],
-               local_work_size[0], local_work_size[1], local_work_size[2]);
-    }
-    if (projections_size + volume_size > max_global_mem_size) {
-        g_warning ("Volume size doesn't fit to memory");
-        return FALSE;
-    }
+
     if (!priv->chunks) {
+        if (are_almost_equal (EXTRACT_DOUBLE (priv->region, 2), 0.0f)) {
+            /* Conservative approach, reconstruct just one slice */
+            region_start = 0.0f;
+            region_stop = 1.0f;
+            region_step = 1.0f;
+        } else {
+            region_start = EXTRACT_DOUBLE (priv->region, 0);
+            region_stop = EXTRACT_DOUBLE (priv->region, 1);
+            region_step = EXTRACT_DOUBLE (priv->region, 2);
+        }
+        priv->num_slices = (gsize) ceil ((region_stop - region_start) / region_step);
+        max_global_mem_size_gvalue = ufo_gpu_node_get_info (node, UFO_GPU_NODE_INFO_GLOBAL_MEM_SIZE);
+        max_global_mem_size = g_value_get_ulong (max_global_mem_size_gvalue);
+        g_value_unset (max_global_mem_size_gvalue);
+        projections_size = BURST * in_req.dims[0] * in_req.dims[1] * sizeof (cl_float);
+        slice_size = requisition->dims[0] * requisition->dims[1] * get_type_size (priv->store_type);
+        volume_size = slice_size * priv->num_slices;
+        max_mem_alloc_size_gvalue = ufo_gpu_node_get_info (node, UFO_GPU_NODE_INFO_MAX_MEM_ALLOC_SIZE);
+        max_mem_alloc_size = g_value_get_ulong (max_mem_alloc_size_gvalue);
+        g_value_unset (max_mem_alloc_size_gvalue);
+        priv->num_slices_per_chunk = (guint) floor ((gdouble) MIN (max_mem_alloc_size, volume_size) / ((gdouble) slice_size));
+        if (projections_size + volume_size > max_global_mem_size) {
+            g_warning ("Volume size doesn't fit to memory");
+            return FALSE;
+        }
+
         /* Create subvolumes (because one large volume might be larger than the maximum allocatable memory chunk */
         priv->num_chunks = (priv->num_slices - 1) / priv->num_slices_per_chunk + 1;
         chunk_size = priv->num_slices_per_chunk * slice_size;
         g_log ("gbp", G_LOG_LEVEL_DEBUG, "Max alloc size: %lu, max global size: %lu", max_mem_alloc_size, max_global_mem_size);
-        g_log ("gbp", G_LOG_LEVEL_DEBUG, "Chunk size: %lu, num chunks: %d, num slices per chunk: %u",
-               chunk_size, priv->num_chunks, priv->num_slices_per_chunk);
+        g_log ("gbp", G_LOG_LEVEL_DEBUG, "Num chunks: %d, chunk size: %lu, num slices per chunk: %u",
+               priv->num_chunks, chunk_size, priv->num_slices_per_chunk);
         g_log ("gbp", G_LOG_LEVEL_DEBUG, "Volume size: %lu, num slices: %u", volume_size, priv->num_slices);
-        priv->chunks = (cl_mem *) g_malloc0 (priv->num_chunks * sizeof (cl_mem));
-        priv->cl_regions = (cl_mem *) g_malloc0 (priv->num_chunks * sizeof (cl_mem));
+        priv->chunks = (cl_mem *) g_malloc (priv->num_chunks * sizeof (cl_mem));
+        if (!priv->chunks) {
+            g_warning ("Error allocating volume chunks");
+        }
+        priv->cl_regions = (cl_mem *) g_malloc (priv->num_chunks * sizeof (cl_mem));
+        if (!priv->cl_regions) {
+            g_warning ("Error allocating volume chunks");
+        }
         for (i = 0; i < priv->num_chunks; i++) {
             g_log ("gbp", G_LOG_LEVEL_DEBUG, "Creating chunk %d with size %lu",
                    i, MIN (volume_size, (i + 1) * chunk_size) - i * chunk_size);
@@ -1287,6 +1279,21 @@ ufo_general_backproject_task_process (UfoTask *task,
         create_regions[priv->compute_type] (priv, cmd_queue, region_start, region_step);
         set_static_args[priv->compute_type] (priv, requisition, priv->kernel);
         set_static_args[priv->compute_type] (priv, requisition, priv->rest_kernel);
+    }
+
+    global_work_size[0] = requisition->dims[0] % local_work_size[0] ?
+                          NEXT_DIVISOR (requisition->dims[0], local_work_size[0]) :
+                          requisition->dims[0];
+    global_work_size[1] = requisition->dims[1] % local_work_size[1] ?
+                          NEXT_DIVISOR (requisition->dims[1], local_work_size[1]) :
+                          requisition->dims[1];
+    global_work_size[2] = priv->num_slices_per_chunk % local_work_size[2] ?
+                          NEXT_DIVISOR (priv->num_slices_per_chunk, local_work_size[2]) :
+                          priv->num_slices_per_chunk;
+    if (!priv->count) {
+        g_log ("gbp", G_LOG_LEVEL_DEBUG, "Global work size: %lu %lu %lu, local: %lu %lu %lu",
+               global_work_size[0], global_work_size[1], global_work_size[2],
+               local_work_size[0], local_work_size[1], local_work_size[2]);
     }
 
     /* Setup tomographic rotation angle dependent arguments */
