@@ -1746,8 +1746,8 @@ ufo_general_backproject_task_class_init (UfoGeneralBackprojectTaskClass *klass)
     GParamSpec *double_region_vals = g_param_spec_double ("double-region-values",
                                                           "Double Region values",
                                                           "Elements in double regions",
-                                                          -G_MAXDOUBLE,
-                                                          G_MAXDOUBLE,
+                                                          -INFINITY,
+                                                          INFINITY,
                                                           0.0,
                                                           G_PARAM_READWRITE);
 
