@@ -926,19 +926,20 @@ create_images (UfoGeneralBackprojectTaskPrivate *priv, gsize width, gsize height
 
     g_log ("gbp", G_LOG_LEVEL_DEBUG, "Creating images %lu x %lu", width, height);
 
+    /* TODO: dangerous, don't rely on the ufo-buffer */
+    image_fmt.image_channel_order = CL_INTENSITY;
+    image_fmt.image_channel_data_type = CL_FLOAT;
+
     for (i = 0; i < BURST; i++) {
-        /* TODO: dangerous, don't rely on the ufo-buffer */
-        image_fmt.image_channel_order = CL_INTENSITY;
-        image_fmt.image_channel_data_type = CL_FLOAT;
         /* TODO: what about the "other" API? */
         priv->projections[i] = clCreateImage2D (priv->context,
-                                                    CL_MEM_READ_ONLY,
-                                                    &image_fmt,
-                                                    width,
-                                                    height,
-                                                    0,
-                                                    NULL,
-                                                    &cl_error);
+                                                CL_MEM_READ_ONLY,
+                                                &image_fmt,
+                                                width,
+                                                height,
+                                                0,
+                                                NULL,
+                                                &cl_error);
         UFO_RESOURCES_CHECK_CLERR (cl_error);
     }
 }
