@@ -1186,7 +1186,6 @@ ufo_general_backproject_task_process (UfoTask *task,
     UfoGeneralBackprojectTaskPrivate *priv;
     UfoRequisition in_req;
     UfoGpuNode *node;
-    UfoProfiler *profiler;
     guint i, index, ki;
     guint burst;
     gsize slice_size, chunk_size, volume_size, projections_size;
@@ -1200,6 +1199,7 @@ ufo_general_backproject_task_process (UfoTask *task,
     cl_float f_tomo_angle[2];
     cl_double d_tomo_angle[2];
     cl_int cumulate;
+    cl_event event;
     const gsize local_work_size[3] = {16, 8, 8};
     gsize global_work_size[3];
     typedef void (*CreateRegionFunc) (UfoGeneralBackprojectTaskPrivate *, const cl_command_queue,
@@ -1212,7 +1212,6 @@ ufo_general_backproject_task_process (UfoTask *task,
     node = UFO_GPU_NODE (ufo_task_node_get_proc_node (UFO_TASK_NODE (task)));
     cmd_queue = ufo_gpu_node_get_cmd_queue (node);
     ufo_buffer_get_requisition (inputs[0], &in_req);
-    profiler = ufo_task_node_get_profiler (UFO_TASK_NODE (task));
     if (priv->count >= priv->num_projections / BURST * BURST) {
         kernel = priv->rest_kernel;
         burst = priv->num_projections % BURST;
@@ -1315,7 +1314,18 @@ ufo_general_backproject_task_process (UfoTask *task,
         for (i = 0; i < priv->num_chunks; i++) {
             UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (kernel, ki, sizeof (cl_mem), &priv->chunks[i]));
             UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (kernel, ki + 1, sizeof (cl_mem), &priv->cl_regions[i]));
-            ufo_profiler_call (profiler, cmd_queue, kernel, 3, global_work_size, local_work_size);
+            cl_error = clEnqueueNDRangeKernel (cmd_queue,
+                                               kernel,
+                                               3,
+                                               NULL,
+                                               global_work_size,
+                                               local_work_size,
+                                               0,
+                                               NULL,
+                                               &event);
+            UFO_RESOURCES_CHECK_CLERR (cl_error);
+            cl_error = clWaitForEvents (1, &event);
+            UFO_RESOURCES_CHECK_CLERR (clReleaseEvent (event));
         }
     }
 
