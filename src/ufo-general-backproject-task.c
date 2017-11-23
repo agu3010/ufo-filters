@@ -44,56 +44,47 @@ fill_sincos_##type (type *array, const gdouble angle) \
     array[1] = (type) cos (angle);                    \
 }
 
-#define DEFINE_CREATE_REGIONS(type)                                                 \
-static void                                                                         \
-create_regions_##type (UfoGeneralBackprojectTaskPrivate *priv,                      \
-                       const cl_command_queue cmd_queue,                            \
-                       const gdouble start,                                         \
-                       const gdouble step)                                          \
-{                                                                                   \
-    guint i, j;                                                                     \
-    gsize region_size;                                                              \
-    type *region_values;                                                            \
-    cl_int cl_error;                                                                \
-    gdouble value;                                                                  \
-    gboolean is_angular = is_parameter_angular (priv->parameter);                   \
-                                                                                    \
-    g_log ("gbp", G_LOG_LEVEL_DEBUG, "Start, step: %g %g", start, step);            \
-                                                                                    \
-    region_size = priv->num_slices_per_chunk * 2 * sizeof (type);                   \
-    region_values = (type *) g_malloc0 (region_size);                               \
-                                                                                    \
-    for (i = 0; i < priv->num_chunks; i++) {                                        \
-        g_log ("gbp", G_LOG_LEVEL_DEBUG, "Chunk %d region:", i);                    \
-        for (j = 0; j < priv->num_slices_per_chunk; j++) {                          \
-            value = start + i * priv->num_slices_per_chunk * step + j * step;       \
-            if (is_angular) {                                                       \
-                region_values[2 * j] = (type) sin (value);                          \
-                region_values[2 * j + 1] = (type) cos (value);                      \
-            } else {                                                                \
-                region_values[2 * j] = (type) value;                                \
-            }                                                                       \
-            g_log ("gbp", G_LOG_LEVEL_DEBUG, "%g,%g",                               \
-                   region_values[2 * j], region_values[2 * j + 1]);                 \
-        }                                                                           \
-        /* Make sure the memory object is associated with the current node,         \
-         * hence no CL_MEM_COPY_HOST_PTR. TODO: If the flag is specified, there are \
-         * out of resources errors in the process function. Investigate this. */    \
-        priv->cl_regions[i] = clCreateBuffer (priv->context,                        \
-                                              CL_MEM_READ_ONLY,                     \
-                                              region_size,                          \
-                                              NULL,                                 \
-                                              &cl_error);                           \
-        UFO_RESOURCES_CHECK_CLERR (cl_error);                                       \
-        UFO_RESOURCES_CHECK_CLERR (clEnqueueWriteBuffer (cmd_queue,                 \
-                                                         priv->cl_regions[i],       \
-                                                         CL_TRUE,                   \
-                                                         0, region_size,            \
-                                                         region_values,             \
-                                                         0, NULL, NULL));           \
-    }                                                                               \
-                                                                                    \
-    g_free (region_values);                                                         \
+#define DEFINE_CREATE_REGIONS(type)                                                   \
+static void                                                                           \
+create_regions_##type (UfoGeneralBackprojectTaskPrivate *priv,                        \
+                       const cl_command_queue cmd_queue,                              \
+                       const gdouble start,                                           \
+                       const gdouble step)                                            \
+{                                                                                     \
+    guint i, j;                                                                       \
+    gsize region_size;                                                                \
+    type *region_values;                                                              \
+    cl_int cl_error;                                                                  \
+    gdouble value;                                                                    \
+    gboolean is_angular = is_parameter_angular (priv->parameter);                     \
+                                                                                      \
+    g_log ("gbp", G_LOG_LEVEL_DEBUG, "Start, step: %g %g", start, step);              \
+                                                                                      \
+    region_size = priv->num_slices_per_chunk * 2 * sizeof (type);                     \
+    region_values = (type *) g_malloc0 (region_size);                                 \
+                                                                                      \
+    for (i = 0; i < priv->num_chunks; i++) {                                          \
+        g_log ("gbp", G_LOG_LEVEL_DEBUG, "Chunk %d region:", i);                      \
+        for (j = 0; j < priv->num_slices_per_chunk; j++) {                            \
+            value = start + i * priv->num_slices_per_chunk * step + j * step;         \
+            if (is_angular) {                                                         \
+                region_values[2 * j] = (type) sin (value);                            \
+                region_values[2 * j + 1] = (type) cos (value);                        \
+            } else {                                                                  \
+                region_values[2 * j] = (type) value;                                  \
+            }                                                                         \
+            g_log ("gbp", G_LOG_LEVEL_DEBUG, "%g,%g",                                 \
+                   region_values[2 * j], region_values[2 * j + 1]);                   \
+        }                                                                             \
+        priv->cl_regions[i] = clCreateBuffer (priv->context,                          \
+                                              CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,\
+                                              region_size,                            \
+                                              region_values,                          \
+                                              &cl_error);                             \
+        UFO_RESOURCES_CHECK_CLERR (cl_error);                                         \
+    }                                                                                 \
+                                                                                      \
+    g_free (region_values);                                                           \
 }
 
 #define DEFINE_SET_STATIC_ARGS(type)                                                                                     \
