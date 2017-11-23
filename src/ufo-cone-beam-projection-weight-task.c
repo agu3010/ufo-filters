@@ -267,8 +267,8 @@ ufo_cone_beam_projection_weight_task_class_init (UfoConeBeamProjectionWeightTask
     GParamSpec *float_region_vals = g_param_spec_float ("float-region-values",
                                                         "Float Region values",
                                                         "Elements in float regions",
-                                                        -G_MAXFLOAT,
-                                                        G_MAXFLOAT,
+                                                        -INFINITY,
+                                                        INFINITY,
                                                         0.0f,
                                                         G_PARAM_READWRITE);
 
