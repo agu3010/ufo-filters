@@ -1323,7 +1323,7 @@ ufo_general_backproject_task_process (UfoTask *task,
             UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (kernel, REAL_SIZE_ARG_INDEX, sizeof (cl_int3), real_size));
             UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (kernel, ki, sizeof (cl_mem), &priv->chunks[i]));
             UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (kernel, ki + 1, sizeof (cl_mem), &priv->cl_regions[i]));
-            ufo_profiler_call (profiler, cmd_queue, kernel, 3, global_work_size, local_work_size);
+            ufo_profiler_call_blocking (profiler, cmd_queue, kernel, 3, global_work_size, local_work_size);
         }
     }
 
