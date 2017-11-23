@@ -34,6 +34,7 @@
 #include "common/ufo-addressing.h"
 #include "ufo-general-backproject-task.h"
 
+#define REAL_SIZE_ARG_INDEX 1
 #define STATIC_ARG_OFFSET 19
 #define G_LOG_LEVEL_DOMAIN "gbp"
 #define DEFINE_FILL_SINCOS(type)                      \
@@ -96,15 +97,14 @@ set_static_args_##type (UfoGeneralBackprojectTaskPrivate *priv,                 
     type slice_z_position, region_x[2], region_y[2], axis_x[2], axis_y[2], axis_z[2],                                    \
          volume_x[2], volume_y[2], volume_z[2], detector_x[2], detector_y[2], detector_z[2],                             \
          gray_limit[2], center_position[4], source_position[4], detector_position[4], norm_factor;                       \
-    guint burst, j, i = 0;                                                                                               \
-    const gint real_size[4] = {requisition->dims[0], requisition->dims[1], (gint) priv->num_slices_per_chunk, 0};        \
+    /* 0 = sampler, 1 = real size set in process (), thus we start with 2 */                                             \
+    guint burst, j, i = 2;                                                                                               \
     gdouble gray_delta_recip = (gdouble) get_integer_maximum (st_values[priv->store_type].value_nick) /                  \
                                (priv->gray_map_max - priv->gray_map_min);                                                \
     norm_factor = 2 * G_PI / priv->num_projections;                                                                      \
     burst = kernel == priv->kernel ? BURST : priv->num_projections % BURST;                                              \
                                                                                                                          \
-    UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (kernel, i++, sizeof (cl_sampler), &priv->sampler));                       \
-    UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (kernel, i++, sizeof (cl_int3), real_size));                               \
+    UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (kernel, 0, sizeof (cl_sampler), &priv->sampler));                         \
                                                                                                                          \
     region_x[0] = (type) EXTRACT_INT (priv->region_x, 0);                                                                \
     region_x[1] = (type) EXTRACT_INT (priv->region_x, 2);                                                                \
@@ -1187,7 +1187,7 @@ ufo_general_backproject_task_process (UfoTask *task,
     UfoRequisition in_req;
     UfoGpuNode *node;
     guint i, index, ki;
-    guint burst;
+    guint burst, num_slices_current_chunk;
     gsize slice_size, chunk_size, volume_size, projections_size;
     gdouble region_start, region_stop, region_step;
     cl_int cl_error;
@@ -1202,6 +1202,7 @@ ufo_general_backproject_task_process (UfoTask *task,
     cl_event event;
     const gsize local_work_size[3] = {16, 8, 8};
     gsize global_work_size[3];
+    gint real_size[4];
     typedef void (*CreateRegionFunc) (UfoGeneralBackprojectTaskPrivate *, const cl_command_queue,
                                       const gdouble, const gdouble);
     typedef void (*SetStaticArgsFunc) (UfoGeneralBackprojectTaskPrivate *, UfoRequisition *, const cl_kernel);
@@ -1289,6 +1290,9 @@ ufo_general_backproject_task_process (UfoTask *task,
     global_work_size[2] = priv->num_slices_per_chunk % local_work_size[2] ?
                           NEXT_DIVISOR (priv->num_slices_per_chunk, local_work_size[2]) :
                           priv->num_slices_per_chunk;
+    real_size[0] = requisition->dims[0];
+    real_size[1] = requisition->dims[1];
+    real_size[3] = 0;
     if (!priv->count) {
         g_log ("gbp", G_LOG_LEVEL_DEBUG, "Global work size: %lu %lu %lu, local: %lu %lu %lu",
                global_work_size[0], global_work_size[1], global_work_size[2],
@@ -1312,6 +1316,10 @@ ufo_general_backproject_task_process (UfoTask *task,
         cumulate = priv->count > burst;
         UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (kernel, ki++, sizeof (cl_int), &cumulate));
         for (i = 0; i < priv->num_chunks; i++) {
+            /* The last chunk might be smaller */
+            num_slices_current_chunk = MIN (priv->num_slices,  (i + 1) * priv->num_slices_per_chunk) - i * priv->num_slices_per_chunk;
+            real_size[2] = (gint) num_slices_current_chunk;
+            UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (kernel, REAL_SIZE_ARG_INDEX, sizeof (cl_int3), real_size));
             UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (kernel, ki, sizeof (cl_mem), &priv->chunks[i]));
             UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (kernel, ki + 1, sizeof (cl_mem), &priv->cl_regions[i]));
             cl_error = clEnqueueNDRangeKernel (cmd_queue,
