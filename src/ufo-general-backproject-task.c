@@ -101,7 +101,7 @@ set_static_args_##type (UfoGeneralBackprojectTaskPrivate *priv,                 
     guint burst, j, i = 2;                                                                                               \
     gdouble gray_delta_recip = (gdouble) get_integer_maximum (st_values[priv->store_type].value_nick) /                  \
                                (priv->gray_map_max - priv->gray_map_min);                                                \
-    norm_factor = priv->overall_angle / priv->num_projections;                                                           \
+    norm_factor = fabs (priv->overall_angle) / priv->num_projections;                                                           \
     burst = kernel == priv->kernel ? BURST : priv->num_projections % BURST;                                              \
                                                                                                                          \
     UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (kernel, 0, sizeof (cl_sampler), &priv->sampler));                         \
