@@ -736,9 +736,10 @@ make_transformations (gint burst, gboolean with_axis, gboolean perpendicular_det
     gchar *code_fmt, *code, *current, *volume_transformation;
     const guint snippet_size = 8192;
     const guint size = burst * snippet_size;
+    /* Based on eq. 30 from "Direct cone beam SPECT reconstruction with camera tilt" */
     const gchar *slice_coefficient =
         "\t// Get the value and weigh it (source_position is negative, so -voxel.y\n"
-        "\tcoeff = native_divide (source_position.y, (source_position.y - voxel.y));\n";
+        "\tcoeff = native_divide (source_position.y - detector_position.y, (source_position.y - voxel.y));\n";
     const gchar *detector_transformation =
         "\tvoxel -= detector_position;\n"
         "\tvoxel = rotate_x ((cfloat2)(-detector_x.x, detector_x.y), voxel);\n"
