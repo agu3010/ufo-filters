@@ -224,23 +224,23 @@ typedef enum {
 } StoreType;
 
 static const GEnumValue parameter_values[] = {
-    { PARAMETER_AXIS_ROTATION_X,     "AXIS_ROTATION_X",     "axis_angle_x" },
-    { PARAMETER_AXIS_ROTATION_Y,     "AXIS_ROTATION_Y",     "axis_angle_y" },
-    { PARAMETER_AXIS_ROTATION_Z,     "AXIS_ROTATION_Z",     "axis_angle_z" },
-    { PARAMETER_VOLUME_ROTATION_X,   "VOLUME_ROTATION_X",   "volume_angle_x" },
-    { PARAMETER_VOLUME_ROTATION_Y,   "VOLUME_ROTATION_Y",   "volume_angle_y" },
-    { PARAMETER_VOLUME_ROTATION_Z,   "VOLUME_ROTATION_Z",   "volume_angle_z" },
-    { PARAMETER_DETECTOR_ROTATION_X, "DETECTOR_ROTATION_X", "detector_angle_x" },
-    { PARAMETER_DETECTOR_ROTATION_Y, "DETECTOR_ROTATION_Y", "detector_angle_y" },
-    { PARAMETER_DETECTOR_ROTATION_Z, "DETECTOR_ROTATION_Z", "detector_angle_z" },
-    { PARAMETER_DETECTOR_POSITION_X, "DETECTOR_POSITION_X", "detector_position_x" },
-    { PARAMETER_DETECTOR_POSITION_Y, "DETECTOR_POSITION_Y", "detector_position_y" },
-    { PARAMETER_DETECTOR_POSITION_Z, "DETECTOR_POSITION_Z", "detector_position_z" },
-    { PARAMETER_SOURCE_POSITION_X,   "SOURCE_POSITION_X",   "source_position_x" },
-    { PARAMETER_SOURCE_POSITION_Y,   "SOURCE_POSITION_Y",   "source_position_y" },
-    { PARAMETER_SOURCE_POSITION_Z,   "SOURCE_POSITION_Z",   "source_position_z" },
-    { PARAMETER_CENTER_X,            "CENTER_X",            "center_x" },
-    { PARAMETER_CENTER_Z,            "CENTER_Z",            "center_z" },
+    { PARAMETER_AXIS_ROTATION_X,     "AXIS_ROTATION_X",     "axis-angle-x" },
+    { PARAMETER_AXIS_ROTATION_Y,     "AXIS_ROTATION_Y",     "axis-angle-y" },
+    { PARAMETER_AXIS_ROTATION_Z,     "AXIS_ROTATION_Z",     "axis-angle-z" },
+    { PARAMETER_VOLUME_ROTATION_X,   "VOLUME_ROTATION_X",   "volume-angle-x" },
+    { PARAMETER_VOLUME_ROTATION_Y,   "VOLUME_ROTATION_Y",   "volume-angle-y" },
+    { PARAMETER_VOLUME_ROTATION_Z,   "VOLUME_ROTATION_Z",   "volume-angle-z" },
+    { PARAMETER_DETECTOR_ROTATION_X, "DETECTOR_ROTATION_X", "detector-angle-x" },
+    { PARAMETER_DETECTOR_ROTATION_Y, "DETECTOR_ROTATION_Y", "detector-angle-y" },
+    { PARAMETER_DETECTOR_ROTATION_Z, "DETECTOR_ROTATION_Z", "detector-angle-z" },
+    { PARAMETER_DETECTOR_POSITION_X, "DETECTOR_POSITION_X", "detector-position-x" },
+    { PARAMETER_DETECTOR_POSITION_Y, "DETECTOR_POSITION_Y", "detector-position-y" },
+    { PARAMETER_DETECTOR_POSITION_Z, "DETECTOR_POSITION_Z", "detector-position-z" },
+    { PARAMETER_SOURCE_POSITION_X,   "SOURCE_POSITION_X",   "source-position-x" },
+    { PARAMETER_SOURCE_POSITION_Y,   "SOURCE_POSITION_Y",   "source-position-y" },
+    { PARAMETER_SOURCE_POSITION_Z,   "SOURCE_POSITION_Z",   "source-position-z" },
+    { PARAMETER_CENTER_X,            "CENTER_X",            "center-x" },
+    { PARAMETER_CENTER_Z,            "CENTER_Z",            "center-z" },
     { PARAMETER_Z,                   "PARAMETER_Z",         "z" },
     { 0, NULL, NULL}
 };
@@ -988,7 +988,7 @@ ufo_general_backproject_task_setup (UfoTask *task,
     guint i;
     cl_int cl_error;
     gboolean with_axis, with_volume, parallel_beam, perpendicular_detector;
-    gchar *template, *kernel_code;
+    gchar *template, *kernel_code, *parameter_for_code;
     UfoGeneralBackprojectTaskPrivate *priv = UFO_GENERAL_BACKPROJECT_TASK_GET_PRIVATE (task);
 
     /* Check parameter values */
@@ -1085,13 +1085,15 @@ ufo_general_backproject_task_setup (UfoTask *task,
             return;
         }
 
+        parameter_for_code = replace_substring (parameter_values[priv->parameter].value_nick, "-", "_");
         kernel_code = make_kernel (template, BURST, with_axis, with_volume,
                                    perpendicular_detector, parallel_beam,
                                    compute_type_values[priv->compute_type].value_nick,
                                    ft_values[priv->result_type].value_nick,
                                    st_values[priv->store_type].value_nick,
-                                   parameter_values[priv->parameter].value_nick, error);
+                                   parameter_for_code, error);
         if (!kernel_code) {
+            g_free (parameter_for_code);
             return;
         }
         priv->kernel = ufo_resources_get_kernel_from_source_with_opts (resources,
@@ -1108,8 +1110,9 @@ ufo_general_backproject_task_setup (UfoTask *task,
                                        compute_type_values[priv->compute_type].value_nick,
                                        ft_values[priv->result_type].value_nick,
                                        st_values[priv->store_type].value_nick,
-                                       parameter_values[priv->parameter].value_nick, error);
+                                       parameter_for_code, error);
             if (!kernel_code) {
+                g_free (parameter_for_code);
                 return;
             }
 
@@ -1123,6 +1126,7 @@ ufo_general_backproject_task_setup (UfoTask *task,
             g_free (kernel_code);
         }
         g_free (template);
+        g_free (parameter_for_code);
     }
 
     for (i = 0; i < BURST; i++) {
