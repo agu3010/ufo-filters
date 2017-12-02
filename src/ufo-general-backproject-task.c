@@ -224,15 +224,15 @@ typedef enum {
 } StoreType;
 
 static const GEnumValue parameter_values[] = {
-    { PARAMETER_AXIS_ROTATION_X,     "AXIS_ROTATION_X",     "axis_x" },
-    { PARAMETER_AXIS_ROTATION_Y,     "AXIS_ROTATION_Y",     "axis_y" },
-    { PARAMETER_AXIS_ROTATION_Z,     "AXIS_ROTATION_Z",     "axis_z" },
-    { PARAMETER_VOLUME_ROTATION_X,   "VOLUME_ROTATION_X",   "volume_x" },
-    { PARAMETER_VOLUME_ROTATION_Y,   "VOLUME_ROTATION_Y",   "volume_y" },
-    { PARAMETER_VOLUME_ROTATION_Z,   "VOLUME_ROTATION_Z",   "volume_z" },
-    { PARAMETER_DETECTOR_ROTATION_X, "DETECTOR_ROTATION_X", "detector_x" },
-    { PARAMETER_DETECTOR_ROTATION_Y, "DETECTOR_ROTATION_Y", "detector_y" },
-    { PARAMETER_DETECTOR_ROTATION_Z, "DETECTOR_ROTATION_Z", "detector_z" },
+    { PARAMETER_AXIS_ROTATION_X,     "AXIS_ROTATION_X",     "axis_angle_x" },
+    { PARAMETER_AXIS_ROTATION_Y,     "AXIS_ROTATION_Y",     "axis_angle_y" },
+    { PARAMETER_AXIS_ROTATION_Z,     "AXIS_ROTATION_Z",     "axis_angle_z" },
+    { PARAMETER_VOLUME_ROTATION_X,   "VOLUME_ROTATION_X",   "volume_angle_x" },
+    { PARAMETER_VOLUME_ROTATION_Y,   "VOLUME_ROTATION_Y",   "volume_angle_y" },
+    { PARAMETER_VOLUME_ROTATION_Z,   "VOLUME_ROTATION_Z",   "volume_angle_z" },
+    { PARAMETER_DETECTOR_ROTATION_X, "DETECTOR_ROTATION_X", "detector_angle_x" },
+    { PARAMETER_DETECTOR_ROTATION_Y, "DETECTOR_ROTATION_Y", "detector_angle_y" },
+    { PARAMETER_DETECTOR_ROTATION_Z, "DETECTOR_ROTATION_Z", "detector_angle_z" },
     { PARAMETER_DETECTOR_POSITION_X, "DETECTOR_POSITION_X", "detector_position_x" },
     { PARAMETER_DETECTOR_POSITION_Y, "DETECTOR_POSITION_Y", "detector_position_y" },
     { PARAMETER_DETECTOR_POSITION_Z, "DETECTOR_POSITION_Z", "detector_position_z" },
@@ -595,9 +595,9 @@ make_parameter_assignment (const gchar *parameter)
             }
         }
         g_strfreev (entries);
-    } else if (g_str_has_prefix (parameter, "axis") ||
-               g_str_has_prefix (parameter, "volume") ||
-               g_str_has_prefix (parameter, "detector")) {
+    } else if (g_str_has_prefix (parameter, "axis_angle") ||
+               g_str_has_prefix (parameter, "volume_angle") ||
+               g_str_has_prefix (parameter, "detector_angle")) {
         code = g_strconcat (parameter, " = region[idz];", NULL);
     }
 
@@ -655,7 +655,7 @@ make_static_transformations (gboolean with_volume, gboolean perpendicular_detect
                             "(detector_position.y - source_position.y));\n");
     }
     if (!perpendicular_detector) {
-        if ((detector_transformation = make_volume_transformation ("detector", "detector_normal")) == NULL) {
+        if ((detector_transformation = make_volume_transformation ("detector_angle", "detector_normal")) == NULL) {
             g_free (code);
             return NULL;
         }
@@ -666,7 +666,7 @@ make_static_transformations (gboolean with_volume, gboolean perpendicular_detect
         current = g_stpcpy (current, "\n\tproject_tmp = detector_offset - source_position.y;\n");
     }
     if (with_volume) {
-        if ((volume_transformation = make_volume_transformation ("volume", "voxel_0")) == NULL) {
+        if ((volume_transformation = make_volume_transformation ("volume_angle", "voxel_0")) == NULL) {
             g_free (code);
             return NULL;
         }
@@ -755,7 +755,7 @@ make_transformations (gint burst, gboolean with_axis, gboolean perpendicular_det
 
     if (with_axis) {
         /* Tilted axis of rotation */
-        if ((volume_transformation = make_volume_transformation ("axis", "voxel")) == NULL) {
+        if ((volume_transformation = make_volume_transformation ("axis_angle", "voxel")) == NULL) {
             g_free (code_fmt);
             g_free (code);
             return NULL;
