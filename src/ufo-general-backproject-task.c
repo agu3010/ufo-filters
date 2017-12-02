@@ -1091,6 +1091,9 @@ ufo_general_backproject_task_setup (UfoTask *task,
                                    ft_values[priv->result_type].value_nick,
                                    st_values[priv->store_type].value_nick,
                                    parameter_values[priv->parameter].value_nick, error);
+        if (!kernel_code) {
+            return;
+        }
         priv->kernel = ufo_resources_get_kernel_from_source_with_opts (resources,
                                                                        kernel_code,
                                                                        "backproject",
@@ -1106,6 +1109,9 @@ ufo_general_backproject_task_setup (UfoTask *task,
                                        ft_values[priv->result_type].value_nick,
                                        st_values[priv->store_type].value_nick,
                                        parameter_values[priv->parameter].value_nick, error);
+            if (!kernel_code) {
+                return;
+            }
 
             /* If num_projections % BURST != 0 we need one more kernel to process the remaining projections */
             priv->rest_kernel = ufo_resources_get_kernel_from_source_with_opts (resources,
