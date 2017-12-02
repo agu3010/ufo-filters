@@ -1018,17 +1018,29 @@ ufo_general_backproject_task_setup (UfoTask *task,
 
     /* Actual parameter setup */
     for (i = 0; i < priv->num_projections; i++) {
-        if (!(are_almost_equal (get_double_from_array_or_scalar (priv->axis_angle_x, 0), 0) &&
+        if (priv->parameter == PARAMETER_AXIS_ROTATION_X ||
+            priv->parameter == PARAMETER_AXIS_ROTATION_Y ||
+            priv->parameter == PARAMETER_AXIS_ROTATION_Z ||
+            !(are_almost_equal (get_double_from_array_or_scalar (priv->axis_angle_x, 0), 0) &&
               are_almost_equal (get_double_from_array_or_scalar (priv->axis_angle_y, 0), 0) &&
               are_almost_equal (get_double_from_array_or_scalar (priv->axis_angle_z, 0), 0))) {
             with_axis = TRUE;
         }
-        if (!(are_almost_equal (get_double_from_array_or_scalar (priv->volume_angle_x, 0), 0) &&
+        if (priv->parameter == PARAMETER_VOLUME_ROTATION_X ||
+            priv->parameter == PARAMETER_VOLUME_ROTATION_Y ||
+            priv->parameter == PARAMETER_VOLUME_ROTATION_Z ||
+            !(are_almost_equal (get_double_from_array_or_scalar (priv->volume_angle_x, 0), 0) &&
               are_almost_equal (get_double_from_array_or_scalar (priv->volume_angle_y, 0), 0) &&
               are_almost_equal (get_double_from_array_or_scalar (priv->volume_angle_z, 0), 0))) {
             with_volume = TRUE;
         }
-        if (!(are_almost_equal (get_double_from_array_or_scalar (priv->detector_angle_x, 0), 0) &&
+        if (priv->parameter == PARAMETER_DETECTOR_ROTATION_X ||
+            priv->parameter == PARAMETER_DETECTOR_ROTATION_Y ||
+            priv->parameter == PARAMETER_DETECTOR_ROTATION_Z ||
+            priv->parameter == PARAMETER_DETECTOR_POSITION_X ||
+            priv->parameter == PARAMETER_DETECTOR_POSITION_Y ||
+            priv->parameter == PARAMETER_DETECTOR_POSITION_Z ||
+            !(are_almost_equal (get_double_from_array_or_scalar (priv->detector_angle_x, 0), 0) &&
               are_almost_equal (get_double_from_array_or_scalar (priv->detector_angle_y, 0), 0) &&
               are_almost_equal (get_double_from_array_or_scalar (priv->detector_angle_z, 0), 0))) {
             perpendicular_detector = FALSE;
