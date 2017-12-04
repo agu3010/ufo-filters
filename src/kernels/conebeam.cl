@@ -21,20 +21,16 @@ kernel void weight_projection (global float *projection,
                                global float *result,
                                const float2 center,
                                const float source_distance,
-                               const float detector_distance,
+                               const float overall_distance,
+                               const float magnification_recip,
                                const float cos_theta)
 {
     int idx = get_global_id (0);
     int idy = get_global_id (1);
     int index = idy * get_global_size (0) + idx;
-    float dist = source_distance + detector_distance;
-    float mag = dist / source_distance;
-    float x = (((float) idx) - center.x + 0.5f) / mag;
-    float y = (((float) idy) - center.y + 0.5f) / mag;
+    float x = (((float) idx) - center.x + 0.5f) * magnification_recip;
+    float y = (((float) idy) - center.y + 0.5f) * magnification_recip;
 
-    if (cos_theta > 0.9999999) {
-        dist = source_distance;
-    }
-
-    result[index] = projection[index] * source_distance * cos_theta / sqrt (dist * dist + x * x + y * y);
+    /* Based on eq. 28 from "Direct cone beam SPECT reconstruction with camera tilt" */
+    result[index] = projection[index] * source_distance * cos_theta / sqrt (overall_distance * overall_distance + x * x + y * y);
 }

@@ -126,7 +126,7 @@ ufo_cone_beam_projection_weight_task_process (UfoTask *task,
     cl_command_queue cmd_queue;
     cl_mem in_mem;
     cl_mem out_mem;
-    gfloat source_distance, detector_distance, cos_angle;
+    gfloat source_distance, detector_distance, overall_distance, magnification_recip, cos_angle;
     gfloat center[2];
 
     priv = UFO_CONE_BEAM_PROJECTION_WEIGHT_TASK_GET_PRIVATE (task);
@@ -140,13 +140,19 @@ ufo_cone_beam_projection_weight_task_process (UfoTask *task,
     center[1] = get_float_from_array_or_scalar (priv->center_z, priv->count);
     source_distance = get_float_from_array_or_scalar (priv->source_distance, priv->count);
     detector_distance = get_float_from_array_or_scalar (priv->detector_distance, priv->count);
+    overall_distance = source_distance + detector_distance;
+    magnification_recip = source_distance / overall_distance;
+    if (cos_angle > 0.9999999f) {
+        overall_distance = source_distance;
+    }
 
     UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (priv->kernel, 0, sizeof(cl_mem), &in_mem));
     UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (priv->kernel, 1, sizeof(cl_mem), &out_mem));
     UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (priv->kernel, 2, sizeof(cl_float2), &center));
     UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (priv->kernel, 3, sizeof(cl_float), &source_distance));
-    UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (priv->kernel, 4, sizeof(cl_float), &detector_distance));
-    UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (priv->kernel, 5, sizeof(cl_float), &cos_angle));
+    UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (priv->kernel, 4, sizeof(cl_float), &overall_distance));
+    UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (priv->kernel, 5, sizeof(cl_float), &magnification_recip));
+    UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (priv->kernel, 6, sizeof(cl_float), &cos_angle));
     ufo_profiler_call (profiler, cmd_queue, priv->kernel, 2, requisition->dims, NULL);
     priv->count++;
 
