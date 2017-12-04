@@ -1303,7 +1303,9 @@ ufo_general_backproject_task_process (UfoTask *task,
         create_images (priv, in_req.dims[0], in_req.dims[1]);
         create_regions[priv->compute_type] (priv, cmd_queue, region_start, region_step);
         set_static_args[priv->compute_type] (priv, requisition, priv->kernel);
-        set_static_args[priv->compute_type] (priv, requisition, priv->rest_kernel);
+        if (priv->rest_kernel) {
+            set_static_args[priv->compute_type] (priv, requisition, priv->rest_kernel);
+        }
     }
 
     global_work_size[0] = requisition->dims[0] % local_work_size[0] ?
