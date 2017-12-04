@@ -100,7 +100,7 @@ set_static_args_##type (UfoGeneralBackprojectTaskPrivate *priv,                 
     gdouble gray_delta_recip = (gdouble) get_integer_maximum (st_values[priv->store_type].value_nick) /                  \
                                (priv->gray_map_max - priv->gray_map_min);                                                \
     norm_factor = fabs (priv->overall_angle) / priv->num_projections;                                                           \
-    burst = kernel == priv->kernel ? BURST : priv->num_projections % BURST;                                              \
+    burst = kernel == priv->kernel ? priv->burst : priv->num_projections % priv->burst;                                  \
                                                                                                                          \
     UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (kernel, 0, sizeof (cl_sampler), &priv->sampler));                         \
                                                                                                                          \
@@ -269,6 +269,7 @@ static GEnumValue st_values[] = {
 
 struct _UfoGeneralBackprojectTaskPrivate {
     /* Properties */
+    guint burst;
     gdouble z;
     GValueArray *region, *region_x, *region_y;
     GValueArray *center_x, *center_z;
@@ -283,11 +284,10 @@ struct _UfoGeneralBackprojectTaskPrivate {
     gdouble gray_map_min, gray_map_max;
     /* Private */
     guint count, generated;
-    cl_mem projections[BURST];
+    cl_mem *projections;
     cl_mem *chunks;
     cl_mem *cl_regions;
     guint num_slices, num_slices_per_chunk, num_chunks;
-    gfloat sines[BURST], cosines[BURST];
     guint num_projections;
     gdouble overall_angle;
     AddressingMode addressing_mode;
@@ -307,6 +307,7 @@ G_DEFINE_TYPE_WITH_CODE (UfoGeneralBackprojectTask, ufo_general_backproject_task
 
 enum {
     PROP_0,
+    PROP_BURST,
     PROP_PARAMETER,
     PROP_Z,
     PROP_REGION,
@@ -929,7 +930,7 @@ create_images (UfoGeneralBackprojectTaskPrivate *priv, gsize width, gsize height
     image_fmt.image_channel_order = CL_INTENSITY;
     image_fmt.image_channel_data_type = CL_FLOAT;
 
-    for (i = 0; i < BURST; i++) {
+    for (i = 0; i < priv->burst; i++) {
         /* TODO: what about the "other" API? */
         priv->projections[i] = clCreateImage2D (priv->context,
                                                 CL_MEM_READ_ONLY,
@@ -989,6 +990,10 @@ ufo_general_backproject_task_setup (UfoTask *task,
     gchar *template, *kernel_code, *parameter_for_code;
     UfoGeneralBackprojectTaskPrivate *priv = UFO_GENERAL_BACKPROJECT_TASK_GET_PRIVATE (task);
 
+    if (!priv->burst) {
+        priv->burst = 8;
+    }
+
     /* Check parameter values */
     if (!priv->num_projections) {
         g_set_error (error, UFO_TASK_ERROR, UFO_TASK_ERROR_SETUP,
@@ -1011,6 +1016,7 @@ ufo_general_backproject_task_setup (UfoTask *task,
     parallel_beam = TRUE;
     priv->kernel = NULL;
     priv->rest_kernel = NULL;
+    priv->projections = NULL;
     priv->chunks = NULL;
     priv->cl_regions = NULL;
 
@@ -1051,7 +1057,7 @@ ufo_general_backproject_task_setup (UfoTask *task,
     g_log ("gbp", G_LOG_LEVEL_DEBUG, "burst: %d, parameter: %s with axis: %d, with volume: %d, "
            "perpendicular detector: %d, parallel beam: %d, "
            "compute type: %s, result type: %s, store type: %s",
-             BURST, parameter_values[priv->parameter].value_nick, with_axis, with_volume,
+             priv->burst, parameter_values[priv->parameter].value_nick, with_axis, with_volume,
              perpendicular_detector, parallel_beam,
              compute_type_values[priv->compute_type].value_nick,
              ft_values[priv->result_type].value_nick,
@@ -1084,7 +1090,7 @@ ufo_general_backproject_task_setup (UfoTask *task,
         }
 
         parameter_for_code = replace_substring (parameter_values[priv->parameter].value_nick, "-", "_");
-        kernel_code = make_kernel (template, BURST, with_axis, with_volume,
+        kernel_code = make_kernel (template, priv->burst, with_axis, with_volume,
                                    perpendicular_detector, parallel_beam,
                                    compute_type_values[priv->compute_type].value_nick,
                                    ft_values[priv->result_type].value_nick,
@@ -1101,8 +1107,8 @@ ufo_general_backproject_task_setup (UfoTask *task,
                                                                        error);
         g_free (kernel_code);
 
-        if (priv->num_projections % BURST) {
-            kernel_code = make_kernel (template, priv->num_projections % BURST,
+        if (priv->num_projections % priv->burst) {
+            kernel_code = make_kernel (template, priv->num_projections % priv->burst,
                                        with_axis, with_volume,
                                        perpendicular_detector, parallel_beam,
                                        compute_type_values[priv->compute_type].value_nick,
@@ -1114,7 +1120,7 @@ ufo_general_backproject_task_setup (UfoTask *task,
                 return;
             }
 
-            /* If num_projections % BURST != 0 we need one more kernel to process the remaining projections */
+            /* If num_projections % priv->burst != 0 we need one more kernel to process the remaining projections */
             priv->rest_kernel = ufo_resources_get_kernel_from_source_with_opts (resources,
                                                                                 kernel_code,
                                                                                 "backproject",
@@ -1125,10 +1131,6 @@ ufo_general_backproject_task_setup (UfoTask *task,
         }
         g_free (template);
         g_free (parameter_for_code);
-    }
-
-    for (i = 0; i < BURST; i++) {
-        priv->projections[i] = NULL;
     }
 
     /* Set OpenCL variables */
@@ -1235,12 +1237,12 @@ ufo_general_backproject_task_process (UfoTask *task,
     cmd_queue = ufo_gpu_node_get_cmd_queue (node);
     ufo_buffer_get_requisition (inputs[0], &in_req);
     profiler = ufo_task_node_get_profiler (UFO_TASK_NODE (task));
-    if (priv->count >= priv->num_projections / BURST * BURST) {
+    if (priv->count >= priv->num_projections / priv->burst * priv->burst) {
         kernel = priv->rest_kernel;
-        burst = priv->num_projections % BURST;
+        burst = priv->num_projections % priv->burst;
     } else {
         kernel = priv->kernel;
-        burst = BURST;
+        burst = priv->burst;
     }
 
     index = priv->count % burst;
@@ -1260,7 +1262,7 @@ ufo_general_backproject_task_process (UfoTask *task,
         max_global_mem_size_gvalue = ufo_gpu_node_get_info (node, UFO_GPU_NODE_INFO_GLOBAL_MEM_SIZE);
         max_global_mem_size = g_value_get_ulong (max_global_mem_size_gvalue);
         g_value_unset (max_global_mem_size_gvalue);
-        projections_size = BURST * in_req.dims[0] * in_req.dims[1] * sizeof (cl_float);
+        projections_size = priv->burst * in_req.dims[0] * in_req.dims[1] * sizeof (cl_float);
         slice_size = requisition->dims[0] * requisition->dims[1] * get_type_size (priv->store_type);
         volume_size = slice_size * priv->num_slices;
         max_mem_alloc_size_gvalue = ufo_gpu_node_get_info (node, UFO_GPU_NODE_INFO_MAX_MEM_ALLOC_SIZE);
@@ -1272,6 +1274,7 @@ ufo_general_backproject_task_process (UfoTask *task,
             return FALSE;
         }
 
+        priv->projections = (cl_mem *) g_malloc (priv->burst * sizeof (cl_mem));
         /* Create subvolumes (because one large volume might be larger than the maximum allocatable memory chunk */
         priv->num_chunks = (priv->num_slices - 1) / priv->num_slices_per_chunk + 1;
         chunk_size = priv->num_slices_per_chunk * slice_size;
@@ -1415,6 +1418,9 @@ ufo_general_backproject_task_set_property (GObject *object,
     GValueArray *array;
 
     switch (property_id) {
+        case PROP_BURST:
+            priv->burst = g_value_get_uint (value);
+            break;
         case PROP_PARAMETER:
             priv->parameter = g_value_get_enum (value);
             break;
@@ -1558,6 +1564,9 @@ ufo_general_backproject_task_get_property (GObject *object,
     UfoGeneralBackprojectTaskPrivate *priv = UFO_GENERAL_BACKPROJECT_TASK_GET_PRIVATE (object);
 
     switch (property_id) {
+        case PROP_BURST:
+            g_value_set_uint (value, priv->burst);
+            break;
         case PROP_PARAMETER:
             g_value_set_enum (value, priv->parameter);
             break;
@@ -1681,12 +1690,17 @@ ufo_general_backproject_task_finalize (GObject *object)
     g_value_array_free (priv->volume_angle_y);
     g_value_array_free (priv->volume_angle_z);
 
-    for (i = 0; i < BURST; i++) {
-        if (priv->projections[i] != NULL) {
-            UFO_RESOURCES_CHECK_CLERR (clReleaseMemObject (priv->projections[i]));
-            priv->projections[i] = NULL;
+    if (priv->projections) {
+        for (i = 0; i < priv->burst; i++) {
+            if (priv->projections[i] != NULL) {
+                UFO_RESOURCES_CHECK_CLERR (clReleaseMemObject (priv->projections[i]));
+                priv->projections[i] = NULL;
+            }
         }
+        g_free (priv->projections);
+        priv->projections = NULL;
     }
+
 
     if (priv->chunks) {
         for (i = 0; i < priv->num_chunks; i++) {
@@ -1761,6 +1775,13 @@ ufo_general_backproject_task_class_init (UfoGeneralBackprojectTaskClass *klass)
                                                           INFINITY,
                                                           0.0,
                                                           G_PARAM_READWRITE);
+
+    properties[PROP_BURST] =
+        g_param_spec_uint ("burst",
+            "Number of projections processed per one kernel invocation",
+            "Number of projections processed per one kernel invocation",
+            0, 128, 0,
+            G_PARAM_READWRITE);
 
     properties[PROP_PARAMETER] =
         g_param_spec_enum ("parameter",
@@ -2000,6 +2021,7 @@ ufo_general_backproject_task_init(UfoGeneralBackprojectTask *self)
     g_value_set_int (&int_value, 0);
 
     /* Scalars */
+    self->priv->burst = 0;
     self->priv->parameter = PARAMETER_Z;
     self->priv->z = 0.0;
     self->priv->num_projections = 0;
