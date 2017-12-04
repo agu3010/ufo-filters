@@ -74,8 +74,6 @@ create_regions_##type (UfoGeneralBackprojectTaskPrivate *priv,                  
             } else {                                                                  \
                 region_values[2 * j] = (type) value;                                  \
             }                                                                         \
-            g_log ("gbp", G_LOG_LEVEL_DEBUG, "%g,%g",                                 \
-                   region_values[2 * j], region_values[2 * j + 1]);                   \
         }                                                                             \
         priv->cl_regions[i] = clCreateBuffer (priv->context,                          \
                                               CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,\
