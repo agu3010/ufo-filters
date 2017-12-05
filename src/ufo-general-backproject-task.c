@@ -284,6 +284,7 @@ struct _UfoGeneralBackprojectTaskPrivate {
     gdouble gray_map_min, gray_map_max;
     /* Private */
     guint count, generated;
+    UfoResources *resources;
     cl_mem *projections;
     cl_mem *chunks;
     cl_mem *cl_regions;
@@ -826,15 +827,13 @@ make_transformations (gint burst, gboolean with_axis, gboolean perpendicular_det
  * @store_type (in): data type of the output volume (one of "half", "float", "double",
  * "uchar", "ushort", "uint")
  * @parameter: (in): parameter which represents the third reconstruction axis
- * @error: A #GError
  *
  * Make backprojection kernel.
  */
 static gchar *
 make_kernel (gchar *template, gint burst, gboolean with_axis, gboolean with_volume,
              gboolean perpendicular_detector, gboolean parallel_beam, const gchar *compute_type,
-             const gchar *result_type, const gchar *store_type, const gchar *parameter,
-             GError **error)
+             const gchar *result_type, const gchar *store_type, const gchar *parameter)
 {
     const gchar *double_pragma_def, *double_pragma, *half_pragma_def, *half_pragma,
           *image_args_fmt, *trigonomoerty_args_fmt;
@@ -848,32 +847,31 @@ make_kernel (gchar *template, gint burst, gboolean with_axis, gboolean with_volu
     parts = g_strsplit (template, "%tmpl%", 8);
 
     if ((image_args = make_args (burst, image_args_fmt)) == NULL) {
-        g_set_error (error, UFO_TASK_ERROR, UFO_TASK_ERROR_SETUP, "Error making image arguments");
+        g_warning ("Error making image arguments");
         return NULL;
     }
     if ((trigonometry_args = make_args (burst, trigonomoerty_args_fmt)) == NULL) {
-        g_set_error (error, UFO_TASK_ERROR, UFO_TASK_ERROR_SETUP, "Error making trigonometric arguments");
+        g_warning ("Error making trigonometric arguments");
         return NULL;
     }
     if ((type_conversion = make_type_conversion (compute_type, store_type)) == NULL) {
-        g_set_error (error, UFO_TASK_ERROR, UFO_TASK_ERROR_SETUP, "Error making type conversion");
+        g_warning ("Error making type conversion");
         return NULL;
     }
     parameter_assignment = make_parameter_assignment (parameter);
     if (parameter_assignment == NULL) {
-        g_set_error (error, UFO_TASK_ERROR, UFO_TASK_ERROR_SETUP, "Wrong parameter name");
+        g_warning ("Wrong parameter name");
         return NULL;
     }
 
     if ((static_transformations = make_static_transformations(with_volume, perpendicular_detector,
                                                               parallel_beam)) == NULL) {
-        g_set_error (error, UFO_TASK_ERROR, UFO_TASK_ERROR_SETUP, "Error making static transformations");
+        g_warning ("Error making static transformations");
         return NULL;
     }
     if ((transformations = make_transformations (burst, with_axis, perpendicular_detector,
                                             parallel_beam, compute_type)) == NULL) {
-        g_set_error (error, UFO_TASK_ERROR, UFO_TASK_ERROR_SETUP,
-                     "Error making tomographic-angle-based transformations");
+        g_warning ("Error making tomographic-angle-based transformations");
         return NULL;
     }
     if (!(g_strcmp0 (compute_type, "double") && g_strcmp0 (result_type, "double"))) {
@@ -971,42 +969,47 @@ copy_to_image (const cl_command_queue cmd_queue,
     UFO_RESOURCES_CHECK_CLERR (clWaitForEvents (1, &event));
     UFO_RESOURCES_CHECK_CLERR (clReleaseEvent (event));
 }
-/*}}}*/
-
-UfoNode *
-ufo_general_backproject_task_new (void)
-{
-    return UFO_NODE (g_object_new (UFO_TYPE_GENERAL_BACKPROJECT_TASK, NULL));
-}
 
 static void
-ufo_general_backproject_task_setup (UfoTask *task,
-                                    UfoResources *resources,
-                                    GError **error)
+node_setup (UfoGeneralBackprojectTaskPrivate *priv,
+                        UfoGpuNode *node)
 {
     guint i;
-    cl_int cl_error;
     gboolean with_axis, with_volume, parallel_beam, perpendicular_detector;
     gchar *template, *kernel_code, *parameter_for_code;
-    UfoGeneralBackprojectTaskPrivate *priv = UFO_GENERAL_BACKPROJECT_TASK_GET_PRIVATE (task);
+    const gchar *node_name;
+    GValue *node_name_gvalue;
+    const gchar compiler_options_tmpl[] = "-cl-nv-maxrregcount=%u";
+    gint compiler_options_length = (gint) (sizeof (compiler_options_tmpl) + 10);
+    gchar *compiler_options = NULL;
+    static GHashTable *table = NULL;
+    UniRecoNodeProps *node_props;
 
+    /* GPU type specific settings */
+    node_name_gvalue = ufo_gpu_node_get_info (node, UFO_GPU_NODE_INFO_NAME);
+    node_name = g_value_get_string (node_name_gvalue);
+    if (!table) {
+        table = get_node_props_table ();
+    }
+    if (!(node_props = g_hash_table_lookup (table, node_name))) {
+        g_log ("gbp", G_LOG_LEVEL_DEBUG, "GPU with name %s not in database", node_name);
+        node_props = g_hash_table_lookup (table, "GENERIC");
+    }
     if (!priv->burst) {
-        priv->burst = 8;
+        priv->burst = node_props->burst;
     }
+    if (node_props->max_regcount) {
+        compiler_options = g_strnfill (compiler_options_length, 0);
+        if (g_snprintf (compiler_options, compiler_options_length, compiler_options_tmpl,
+                        node_props->max_regcount) > compiler_options_length) {
+            g_warning ("Error creating back projection compiler build options");
+        }
+    }
+    g_log ("gbp", G_LOG_LEVEL_DEBUG,
+           "GPU node %s properties: burst: %u, compiler options: '%s'",
+           node_name, priv->burst, compiler_options);
+    g_value_unset (node_name_gvalue);
 
-    /* Check parameter values */
-    if (!priv->num_projections) {
-        g_set_error (error, UFO_TASK_ERROR, UFO_TASK_ERROR_SETUP,
-                     "Number of projections not set");
-        return;
-    }
-
-    if (priv->gray_map_min >= priv->gray_map_max &&
-        (priv->store_type == ST_UCHAR || priv->store_type == ST_USHORT || priv->store_type == ST_UINT)) {
-        g_set_error (error, UFO_TASK_ERROR, UFO_TASK_ERROR_SETUP,
-                     "Gray mapping minimum must be less then the maximum");
-        return;
-    }
 
     /* Initialization */
     /* Assume the most efficient geometry, change if necessary */
@@ -1014,11 +1017,6 @@ ufo_general_backproject_task_setup (UfoTask *task,
     with_volume = FALSE;
     perpendicular_detector = TRUE;
     parallel_beam = TRUE;
-    priv->kernel = NULL;
-    priv->rest_kernel = NULL;
-    priv->projections = NULL;
-    priv->chunks = NULL;
-    priv->cl_regions = NULL;
 
     /* Actual parameter setup */
     for (i = 0; i < priv->num_projections; i++) {
@@ -1081,11 +1079,12 @@ ufo_general_backproject_task_setup (UfoTask *task,
         priv->center_x->n_values == priv->num_projections ||
         priv->center_z->n_values == priv->num_projections) {
         g_log ("gbp", G_LOG_LEVEL_DEBUG, "Using vectorized parameters kernel");
-        g_set_error (error, UFO_TASK_ERROR, UFO_TASK_ERROR_SETUP, "Vectorized parameters are not yet implemented");
+        g_warning ("Vectorized parameters are not yet implemented");
     } else {
         g_log ("gbp", G_LOG_LEVEL_DEBUG, "Using scalar-based parameters kernel");
         /* Create kernel source code based on geometry settings */
-        if (!(template = ufo_resources_get_kernel_source (resources, "general_backproject.in", error))) {
+        if (!(template = ufo_resources_get_kernel_source (priv->resources, "general_backproject.in", NULL))) {
+            g_warning ("Error obtaining general backprojection kernel template");
             return;
         }
 
@@ -1095,16 +1094,16 @@ ufo_general_backproject_task_setup (UfoTask *task,
                                    compute_type_values[priv->compute_type].value_nick,
                                    ft_values[priv->result_type].value_nick,
                                    st_values[priv->store_type].value_nick,
-                                   parameter_for_code, error);
+                                   parameter_for_code);
         if (!kernel_code) {
             g_free (parameter_for_code);
             return;
         }
-        priv->kernel = ufo_resources_get_kernel_from_source_with_opts (resources,
+        priv->kernel = ufo_resources_get_kernel_from_source_with_opts (priv->resources,
                                                                        kernel_code,
                                                                        "backproject",
-                                                                       NULL,
-                                                                       error);
+                                                                       compiler_options,
+                                                                       NULL);
         g_free (kernel_code);
 
         if (priv->num_projections % priv->burst) {
@@ -1114,18 +1113,18 @@ ufo_general_backproject_task_setup (UfoTask *task,
                                        compute_type_values[priv->compute_type].value_nick,
                                        ft_values[priv->result_type].value_nick,
                                        st_values[priv->store_type].value_nick,
-                                       parameter_for_code, error);
+                                       parameter_for_code);
             if (!kernel_code) {
                 g_free (parameter_for_code);
                 return;
             }
 
             /* If num_projections % priv->burst != 0 we need one more kernel to process the remaining projections */
-            priv->rest_kernel = ufo_resources_get_kernel_from_source_with_opts (resources,
+            priv->rest_kernel = ufo_resources_get_kernel_from_source_with_opts (priv->resources,
                                                                                 kernel_code,
                                                                                 "backproject",
-                                                                                NULL,
-                                                                                error);
+                                                                                compiler_options,
+                                                                                NULL);
             /* g_printf ("%s", kernel_code); */
             g_free (kernel_code);
         }
@@ -1133,16 +1132,52 @@ ufo_general_backproject_task_setup (UfoTask *task,
         g_free (parameter_for_code);
     }
 
-    /* Set OpenCL variables */
-    priv->context = ufo_resources_get_context (resources);
-    UFO_RESOURCES_CHECK_CLERR (clRetainContext (priv->context));
-
     if (priv->kernel) {
         UFO_RESOURCES_CHECK_CLERR (clRetainKernel (priv->kernel));
     }
     if (priv->rest_kernel) {
         UFO_RESOURCES_CHECK_CLERR (clRetainKernel (priv->rest_kernel));
     }
+}
+/*}}}*/
+
+UfoNode *
+ufo_general_backproject_task_new (void)
+{
+    return UFO_NODE (g_object_new (UFO_TYPE_GENERAL_BACKPROJECT_TASK, NULL));
+}
+
+static void
+ufo_general_backproject_task_setup (UfoTask *task,
+                                    UfoResources *resources,
+                                    GError **error)
+{
+    cl_int cl_error;
+    UfoGeneralBackprojectTaskPrivate *priv = UFO_GENERAL_BACKPROJECT_TASK_GET_PRIVATE (task);
+    priv->resources = g_object_ref (resources);
+    priv->kernel = NULL;
+    priv->rest_kernel = NULL;
+    priv->projections = NULL;
+    priv->chunks = NULL;
+    priv->cl_regions = NULL;
+
+    /* Check parameter values */
+    if (!priv->num_projections) {
+        g_set_error (error, UFO_TASK_ERROR, UFO_TASK_ERROR_SETUP,
+                     "Number of projections not set");
+        return;
+    }
+
+    if (priv->gray_map_min >= priv->gray_map_max &&
+        (priv->store_type == ST_UCHAR || priv->store_type == ST_USHORT || priv->store_type == ST_UINT)) {
+        g_set_error (error, UFO_TASK_ERROR, UFO_TASK_ERROR_SETUP,
+                     "Gray mapping minimum must be less then the maximum");
+        return;
+    }
+
+    /* Set OpenCL variables */
+    priv->context = ufo_resources_get_context (resources);
+    UFO_RESOURCES_CHECK_CLERR (clRetainContext (priv->context));
     priv->sampler = clCreateSampler (priv->context, (cl_bool) FALSE, priv->addressing_mode, CL_FILTER_LINEAR, &cl_error);
     UFO_RESOURCES_CHECK_CLERR (cl_error);
 }
@@ -1237,6 +1272,11 @@ ufo_general_backproject_task_process (UfoTask *task,
     cmd_queue = ufo_gpu_node_get_cmd_queue (node);
     ufo_buffer_get_requisition (inputs[0], &in_req);
     profiler = ufo_task_node_get_profiler (UFO_TASK_NODE (task));
+    if (!priv->kernel) {
+        /* First iteration, setup kernels */
+        node_setup (priv, node);
+    }
+
     if (priv->count >= priv->num_projections / priv->burst * priv->burst) {
         kernel = priv->rest_kernel;
         burst = priv->num_projections % priv->burst;
@@ -1670,6 +1710,8 @@ ufo_general_backproject_task_finalize (GObject *object)
 {
     guint i;
     UfoGeneralBackprojectTaskPrivate *priv = UFO_GENERAL_BACKPROJECT_TASK_GET_PRIVATE (object);
+    g_object_unref (priv->resources);
+    priv->resources = NULL;
 
     g_value_array_free (priv->region);
     g_value_array_free (priv->region_x);
