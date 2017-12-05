@@ -18,6 +18,11 @@
  */
 #include "conebeam.h"
 
+static UniRecoNodeProps node_props[] = {
+    {"GENERIC", 8, 0},
+    {"GEFORCE_GTX_TITAN", 24, 32}
+};
+
 gfloat
 get_float_from_array_or_scalar (GValueArray *array, guint index)
 {
@@ -46,4 +51,17 @@ get_double_from_array_or_scalar (GValueArray *array, guint index)
     }
 
     return EXTRACT_DOUBLE (array, index);
+}
+
+GHashTable *
+get_node_props_table (void)
+{
+    guint i;
+    GHashTable *table = g_hash_table_new (g_str_hash, g_str_equal);
+
+    for (i = 0; i < sizeof (node_props) / sizeof (UniRecoNodeProps); i++) {
+        g_hash_table_insert (table, node_props[i].name, &node_props[i]);
+    }
+
+    return table;
 }

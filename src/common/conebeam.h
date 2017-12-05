@@ -34,10 +34,16 @@
 #include <glib.h>
 #include <glib-object.h>
 
+typedef struct {
+    gchar *name;
+    guint burst;
+    guint max_regcount;
+} UniRecoNodeProps;
 
 gfloat get_float_from_array_or_scalar (GValueArray *array,
                                        guint index);
 gdouble get_double_from_array_or_scalar (GValueArray *array,
                                          guint index);
+GHashTable *get_node_props_table (void);
 
 #endif
