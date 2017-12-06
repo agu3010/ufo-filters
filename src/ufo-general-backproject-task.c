@@ -292,6 +292,7 @@ struct _UfoGeneralBackprojectTaskPrivate {
     guint num_projections;
     gdouble overall_angle;
     AddressingMode addressing_mode;
+    GHashTable *node_props_table;
     /* OpenCL */
     cl_context context;
     cl_kernel kernel, rest_kernel;
@@ -982,18 +983,14 @@ node_setup (UfoGeneralBackprojectTaskPrivate *priv,
     const gchar compiler_options_tmpl[] = "-cl-nv-maxrregcount=%u";
     gint compiler_options_length = (gint) (sizeof (compiler_options_tmpl) + 10);
     gchar *compiler_options = NULL;
-    static GHashTable *table = NULL;
     UniRecoNodeProps *node_props;
 
     /* GPU type specific settings */
     node_name_gvalue = ufo_gpu_node_get_info (node, UFO_GPU_NODE_INFO_NAME);
     node_name = g_value_get_string (node_name_gvalue);
-    if (!table) {
-        table = get_node_props_table ();
-    }
-    if (!(node_props = g_hash_table_lookup (table, node_name))) {
+    if (!(node_props = g_hash_table_lookup (priv->node_props_table, node_name))) {
         g_log ("gbp", G_LOG_LEVEL_DEBUG, "GPU with name %s not in database", node_name);
-        node_props = g_hash_table_lookup (table, "GENERIC");
+        node_props = g_hash_table_lookup (priv->node_props_table, "GENERIC");
     }
     if (!priv->burst) {
         priv->burst = node_props->burst;
@@ -1174,6 +1171,8 @@ ufo_general_backproject_task_setup (UfoTask *task,
                      "Gray mapping minimum must be less then the maximum");
         return;
     }
+
+    priv->node_props_table = get_node_props_table ();
 
     /* Set OpenCL variables */
     priv->context = ufo_resources_get_context (resources);
@@ -1733,6 +1732,7 @@ ufo_general_backproject_task_finalize (GObject *object)
     g_value_array_free (priv->volume_angle_x);
     g_value_array_free (priv->volume_angle_y);
     g_value_array_free (priv->volume_angle_z);
+    g_hash_table_destroy (priv->node_props_table);
 
     if (priv->projections) {
         for (i = 0; i < priv->burst; i++) {
