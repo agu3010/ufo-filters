@@ -1270,7 +1270,7 @@ ufo_general_backproject_task_process (UfoTask *task,
     node = UFO_GPU_NODE (ufo_task_node_get_proc_node (UFO_TASK_NODE (task)));
     cmd_queue = ufo_gpu_node_get_cmd_queue (node);
     ufo_buffer_get_requisition (inputs[0], &in_req);
-    profiler = ufo_task_node_get_profiler (UFO_TASK_NODE (task));
+
     if (!priv->kernel) {
         /* First iteration, setup kernels */
         node_setup (priv, node);
@@ -1378,6 +1378,7 @@ ufo_general_backproject_task_process (UfoTask *task,
     }
 
     if (index + 1 == burst) {
+        profiler = ufo_task_node_get_profiler (UFO_TASK_NODE (task));
         ki += index + 1;
         cumulate = priv->count > burst;
         UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (kernel, ki++, sizeof (cl_int), &cumulate));
