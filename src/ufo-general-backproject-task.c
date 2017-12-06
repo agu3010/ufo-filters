@@ -1893,131 +1893,131 @@ ufo_general_backproject_task_class_init (UfoGeneralBackprojectTaskClass *klass)
 
     properties[PROP_CENTER_X] =
         g_param_spec_value_array ("center-x",
-                                  "Global x center (horizontal in a projection) of the volume with respect to projections",
-                                  "Global x center (horizontal in a projection) of the volume with respect to projections",
-                                  double_region_vals,
-                                  G_PARAM_READWRITE);
+            "Global x center (horizontal in a projection) of the volume with respect to projections",
+            "Global x center (horizontal in a projection) of the volume with respect to projections",
+            double_region_vals,
+            G_PARAM_READWRITE);
 
     properties[PROP_CENTER_Z] =
         g_param_spec_value_array ("center-z",
-                                  "Global z center (vertical in a projection) of the volume with respect to projections",
-                                  "Global z center (vertical in a projection) of the volume with respect to projections",
-                                  double_region_vals,
-                                  G_PARAM_READWRITE);
+            "Global z center (vertical in a projection) of the volume with respect to projections",
+            "Global z center (vertical in a projection) of the volume with respect to projections",
+            double_region_vals,
+            G_PARAM_READWRITE);
 
     properties[PROP_SOURCE_POSITION_X] =
         g_param_spec_value_array ("source-position-x",
-                                  "X source position (horizontal) in global coordinates [pixels]",
-                                  "X source position (horizontal) in global coordinates [pixels]",
-                                  double_region_vals,
-                                  G_PARAM_READWRITE);
+            "X source position (horizontal) in global coordinates [pixels]",
+            "X source position (horizontal) in global coordinates [pixels]",
+            double_region_vals,
+            G_PARAM_READWRITE);
 
     properties[PROP_SOURCE_POSITION_Y] =
         g_param_spec_value_array ("source-position-y",
-                                  "Y source position (beam direction) in global coordinates [pixels]",
-                                  "Y source position (beam direction) in global coordinates [pixels]",
-                                  double_region_vals,
-                                  G_PARAM_READWRITE);
+            "Y source position (beam direction) in global coordinates [pixels]",
+            "Y source position (beam direction) in global coordinates [pixels]",
+            double_region_vals,
+            G_PARAM_READWRITE);
 
     properties[PROP_SOURCE_POSITION_Z] =
         g_param_spec_value_array ("source-position-z",
-                                  "Z source position (vertical) in global coordinates [pixels]",
-                                  "Z source position (vertical) in global coordinates [pixels]",
-                                  double_region_vals,
-                                  G_PARAM_READWRITE);
+            "Z source position (vertical) in global coordinates [pixels]",
+            "Z source position (vertical) in global coordinates [pixels]",
+            double_region_vals,
+            G_PARAM_READWRITE);
 
     properties[PROP_DETECTOR_POSITION_X] =
         g_param_spec_value_array ("detector-position-x",
-                                  "X detector position (horizontal) in global coordinates [pixels]",
-                                  "X detector position (horizontal) in global coordinates [pixels]",
-                                  double_region_vals,
-                                  G_PARAM_READWRITE);
+            "X detector position (horizontal) in global coordinates [pixels]",
+            "X detector position (horizontal) in global coordinates [pixels]",
+            double_region_vals,
+            G_PARAM_READWRITE);
 
     properties[PROP_DETECTOR_POSITION_Y] =
         g_param_spec_value_array ("detector-position-y",
-                                  "Y detector position (along beam direction) in global coordinates [pixels]",
-                                  "Y detector position (along beam direction) in global coordinates [pixels]",
-                                  double_region_vals,
-                                  G_PARAM_READWRITE);
+            "Y detector position (along beam direction) in global coordinates [pixels]",
+            "Y detector position (along beam direction) in global coordinates [pixels]",
+            double_region_vals,
+            G_PARAM_READWRITE);
 
     properties[PROP_DETECTOR_POSITION_Z] =
         g_param_spec_value_array ("detector-position-z",
-                                  "Z detector position (vertical) in global coordinates [pixels]",
-                                  "Z detector position (vertical) in global coordinates [pixels]",
-                                  double_region_vals,
-                                  G_PARAM_READWRITE);
+            "Z detector position (vertical) in global coordinates [pixels]",
+            "Z detector position (vertical) in global coordinates [pixels]",
+            double_region_vals,
+            G_PARAM_READWRITE);
 
     properties[PROP_DETECTOR_ANGLE_X] =
         g_param_spec_value_array("detector-angle-x",
-                                 "Detector rotation around the x axis [rad] (horizontal)",
-                                 "Detector rotation around the x axis [rad] (horizontal)",
-                                 double_region_vals,
-                                 G_PARAM_READWRITE);
+            "Detector rotation around the x axis [rad] (horizontal)",
+            "Detector rotation around the x axis [rad] (horizontal)",
+            double_region_vals,
+            G_PARAM_READWRITE);
 
     properties[PROP_DETECTOR_ANGLE_Y] =
         g_param_spec_value_array("detector-angle-y",
-                                 "Detector rotation around the y axis [rad] (along beam direction)",
-                                 "Detector rotation around the y axis [rad] (balong eam direction)",
-                                 double_region_vals,
-                                 G_PARAM_READWRITE);
+            "Detector rotation around the y axis [rad] (along beam direction)",
+            "Detector rotation around the y axis [rad] (balong eam direction)",
+            double_region_vals,
+            G_PARAM_READWRITE);
 
     properties[PROP_DETECTOR_ANGLE_Z] =
         g_param_spec_value_array("detector-angle-z",
-                                 "Detector rotation around the z axis [rad] (vertical)",
-                                 "Detector rotation around the z axis [rad] (vertical)",
-                                 double_region_vals,
-                                 G_PARAM_READWRITE);
+            "Detector rotation around the z axis [rad] (vertical)",
+            "Detector rotation around the z axis [rad] (vertical)",
+            double_region_vals,
+            G_PARAM_READWRITE);
 
     properties[PROP_AXIS_ANGLE_X] =
         g_param_spec_value_array("axis-angle-x",
-                                 "Rotation axis rotation around the x axis [rad] (laminographic angle, 0 = tomography)",
-                                 "Rotation axis rotation around the x axis [rad] (laminographic angle, 0 = tomography)",
-                                 double_region_vals,
-                                 G_PARAM_READWRITE);
+            "Rotation axis rotation around the x axis [rad] (laminographic angle, 0 = tomography)",
+            "Rotation axis rotation around the x axis [rad] (laminographic angle, 0 = tomography)",
+            double_region_vals,
+            G_PARAM_READWRITE);
 
     properties[PROP_AXIS_ANGLE_Y] =
         g_param_spec_value_array("axis-angle-y",
-                                 "Rotation axis rotation around the y axis [rad] (along beam direction)",
-                                 "Rotation axis rotation around the y axis [rad] (along beam direction)",
-                                 double_region_vals,
-                                 G_PARAM_READWRITE);
+            "Rotation axis rotation around the y axis [rad] (along beam direction)",
+            "Rotation axis rotation around the y axis [rad] (along beam direction)",
+            double_region_vals,
+            G_PARAM_READWRITE);
 
     properties[PROP_AXIS_ANGLE_Z] =
         g_param_spec_value_array("axis-angle-z",
-                                 "Rotation axis rotation around the z axis [rad] (vertical)",
-                                 "Rotation axis rotation around the z axis [rad] (vertical)",
-                                 double_region_vals,
-                                 G_PARAM_READWRITE);
+            "Rotation axis rotation around the z axis [rad] (vertical)",
+            "Rotation axis rotation around the z axis [rad] (vertical)",
+            double_region_vals,
+            G_PARAM_READWRITE);
 
     properties[PROP_VOLUME_ANGLE_X] =
         g_param_spec_value_array("volume-angle-x",
-                                 "Volume rotation around the x axis [rad] (horizontal)",
-                                 "Volume rotation around the x axis [rad] (horizontal)",
-                                 double_region_vals,
-                                 G_PARAM_READWRITE);
+            "Volume rotation around the x axis [rad] (horizontal)",
+            "Volume rotation around the x axis [rad] (horizontal)",
+            double_region_vals,
+            G_PARAM_READWRITE);
 
     properties[PROP_VOLUME_ANGLE_Y] =
         g_param_spec_value_array("volume-angle-y",
-                                 "Volume rotation around the y axis [rad] (along beam direction)",
-                                 "Volume rotation around the y axis [rad] (along beam direction)",
-                                 double_region_vals,
-                                 G_PARAM_READWRITE);
+            "Volume rotation around the y axis [rad] (along beam direction)",
+            "Volume rotation around the y axis [rad] (along beam direction)",
+            double_region_vals,
+            G_PARAM_READWRITE);
 
     properties[PROP_VOLUME_ANGLE_Z] =
         g_param_spec_value_array("volume-angle-z",
-                                 "Volume rotation around the z axis [rad] (vertical)",
-                                 "Volume rotation around the z axis [rad] (vertical)",
-                                 double_region_vals,
-                                 G_PARAM_READWRITE);
+            "Volume rotation around the z axis [rad] (vertical)",
+            "Volume rotation around the z axis [rad] (vertical)",
+            double_region_vals,
+            G_PARAM_READWRITE);
 
     properties[PROP_COMPUTE_TYPE] =
         g_param_spec_enum ("compute-type",
-                             "Data type for performing kernel math operations",
-                             "Data type for performing kernel math operations "
-                             "(\"half\", \"float\", \"double\")",
-                             g_enum_register_static ("compute-type", compute_type_values),
-                             FT_FLOAT,
-                             G_PARAM_READWRITE);
+            "Data type for performing kernel math operations",
+            "Data type for performing kernel math operations "
+            "(\"half\", \"float\", \"double\")",
+            g_enum_register_static ("compute-type", compute_type_values),
+            FT_FLOAT,
+            G_PARAM_READWRITE);
 
     properties[PROP_ADDRESSING_MODE] =
         g_param_spec_enum ("addressing-mode",
@@ -2029,21 +2029,21 @@ ufo_general_backproject_task_class_init (UfoGeneralBackprojectTaskClass *klass)
 
     properties[PROP_RESULT_TYPE] =
         g_param_spec_enum ("result-type",
-                             "Data type for storing the intermediate gray value for a voxel from various rotation angles",
-                             "Data type for storing the intermediate gray value for a voxel from various rotation angles "
-                             "(\"half\", \"float\", \"double\")",
-                             g_enum_register_static ("result-type", ft_values),
-                             FT_FLOAT,
-                             G_PARAM_READWRITE);
+            "Data type for storing the intermediate gray value for a voxel from various rotation angles",
+            "Data type for storing the intermediate gray value for a voxel from various rotation angles "
+            "(\"half\", \"float\", \"double\")",
+            g_enum_register_static ("result-type", ft_values),
+            FT_FLOAT,
+            G_PARAM_READWRITE);
 
     properties[PROP_STORE_TYPE] =
         g_param_spec_enum ("store-type",
-                             "Data type of the output volume",
-                             "Data type of the output volume "
-                             "(\"half\", \"float\", \"double\", \"uchar\", \"ushort\", \"uint\")",
-                             g_enum_register_static ("store-type", st_values),
-                             ST_FLOAT,
-                             G_PARAM_READWRITE);
+            "Data type of the output volume",
+            "Data type of the output volume "
+            "(\"half\", \"float\", \"double\", \"uchar\", \"ushort\", \"uint\")",
+            g_enum_register_static ("store-type", st_values),
+            ST_FLOAT,
+            G_PARAM_READWRITE);
 
     properties[PROP_OVERALL_ANGLE] =
         g_param_spec_double ("overall-angle",
