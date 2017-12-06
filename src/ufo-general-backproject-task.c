@@ -408,13 +408,67 @@ get_integer_maximum (const gchar *type_name)
 }
 
 static gboolean
+is_axis_parameter (Parameter parameter)
+{
+    return parameter == PARAMETER_AXIS_ROTATION_X ||
+           parameter == PARAMETER_AXIS_ROTATION_Y ||
+           parameter == PARAMETER_AXIS_ROTATION_Z;
+}
+
+static gboolean
+is_volume_parameter (Parameter parameter)
+{
+    return parameter == PARAMETER_VOLUME_ROTATION_X ||
+           parameter == PARAMETER_VOLUME_ROTATION_Y ||
+           parameter == PARAMETER_VOLUME_ROTATION_Z;
+}
+
+static gboolean
+is_detector_rotation_parameter (Parameter parameter)
+{
+    return parameter == PARAMETER_DETECTOR_ROTATION_X ||
+           parameter == PARAMETER_DETECTOR_ROTATION_Y ||
+           parameter == PARAMETER_DETECTOR_ROTATION_Z;
+}
+
+static gboolean
+is_detector_position_parameter (Parameter parameter)
+{
+    return parameter == PARAMETER_DETECTOR_POSITION_X ||
+           parameter == PARAMETER_DETECTOR_POSITION_Y ||
+           parameter == PARAMETER_DETECTOR_POSITION_Z;
+}
+
+static gboolean
 is_parameter_angular (Parameter parameter)
 {
-    return (parameter == PARAMETER_AXIS_ROTATION_X || parameter == PARAMETER_AXIS_ROTATION_Y ||
-            parameter == PARAMETER_AXIS_ROTATION_Z || parameter == PARAMETER_VOLUME_ROTATION_X ||
-            parameter == PARAMETER_VOLUME_ROTATION_Y || parameter == PARAMETER_VOLUME_ROTATION_Z ||
-            parameter == PARAMETER_DETECTOR_ROTATION_X || parameter == PARAMETER_DETECTOR_ROTATION_Y ||
-            parameter == PARAMETER_DETECTOR_ROTATION_Z);
+    return is_axis_parameter (parameter) ||
+           is_volume_parameter (parameter) ||
+           is_detector_position_parameter (parameter);
+}
+
+static gboolean
+is_axis_angle_almost_zero (UfoGeneralBackprojectTaskPrivate *priv)
+{
+    return are_almost_equal (get_double_from_array_or_scalar (priv->axis_angle_x, 0), 0) &&
+           are_almost_equal (get_double_from_array_or_scalar (priv->axis_angle_y, 0), 0) &&
+           are_almost_equal (get_double_from_array_or_scalar (priv->axis_angle_z, 0), 0);
+}
+
+static gboolean
+is_volume_angle_almost_zero (UfoGeneralBackprojectTaskPrivate *priv)
+{
+    return are_almost_equal (get_double_from_array_or_scalar (priv->volume_angle_x, 0), 0) &&
+           are_almost_equal (get_double_from_array_or_scalar (priv->volume_angle_y, 0), 0) &&
+           are_almost_equal (get_double_from_array_or_scalar (priv->volume_angle_z, 0), 0);
+}
+
+static gboolean
+is_detector_angle_almost_zero (UfoGeneralBackprojectTaskPrivate *priv)
+{
+    return are_almost_equal (get_double_from_array_or_scalar (priv->detector_angle_x, 0), 0) &&
+           are_almost_equal (get_double_from_array_or_scalar (priv->detector_angle_y, 0), 0) &&
+           are_almost_equal (get_double_from_array_or_scalar (priv->detector_angle_z, 0), 0);
 }
 /*}}}*/
 
@@ -1007,46 +1061,19 @@ node_setup (UfoGeneralBackprojectTaskPrivate *priv,
            node_name, priv->burst, compiler_options);
     g_value_unset (node_name_gvalue);
 
-
     /* Initialization */
     /* Assume the most efficient geometry, change if necessary */
-    with_axis = FALSE;
-    with_volume = FALSE;
-    perpendicular_detector = TRUE;
+    with_axis = is_axis_parameter (priv->parameter) || !is_axis_angle_almost_zero (priv);
+    with_volume = is_volume_parameter (priv->parameter) || !is_volume_angle_almost_zero (priv);
+    perpendicular_detector = is_detector_rotation_parameter (priv->parameter) ||
+                             is_detector_position_parameter (priv->parameter) ||
+                             !is_detector_angle_almost_zero (priv);
+
     parallel_beam = TRUE;
 
     /* Actual parameter setup */
     for (i = 0; i < priv->num_projections; i++) {
-        if (priv->parameter == PARAMETER_AXIS_ROTATION_X ||
-            priv->parameter == PARAMETER_AXIS_ROTATION_Y ||
-            priv->parameter == PARAMETER_AXIS_ROTATION_Z ||
-            !(are_almost_equal (get_double_from_array_or_scalar (priv->axis_angle_x, 0), 0) &&
-              are_almost_equal (get_double_from_array_or_scalar (priv->axis_angle_y, 0), 0) &&
-              are_almost_equal (get_double_from_array_or_scalar (priv->axis_angle_z, 0), 0))) {
-            with_axis = TRUE;
-        }
-        if (priv->parameter == PARAMETER_VOLUME_ROTATION_X ||
-            priv->parameter == PARAMETER_VOLUME_ROTATION_Y ||
-            priv->parameter == PARAMETER_VOLUME_ROTATION_Z ||
-            !(are_almost_equal (get_double_from_array_or_scalar (priv->volume_angle_x, 0), 0) &&
-              are_almost_equal (get_double_from_array_or_scalar (priv->volume_angle_y, 0), 0) &&
-              are_almost_equal (get_double_from_array_or_scalar (priv->volume_angle_z, 0), 0))) {
-            with_volume = TRUE;
-        }
-        if (priv->parameter == PARAMETER_DETECTOR_ROTATION_X ||
-            priv->parameter == PARAMETER_DETECTOR_ROTATION_Y ||
-            priv->parameter == PARAMETER_DETECTOR_ROTATION_Z ||
-            priv->parameter == PARAMETER_DETECTOR_POSITION_X ||
-            priv->parameter == PARAMETER_DETECTOR_POSITION_Y ||
-            priv->parameter == PARAMETER_DETECTOR_POSITION_Z ||
-            !(are_almost_equal (get_double_from_array_or_scalar (priv->detector_angle_x, 0), 0) &&
-              are_almost_equal (get_double_from_array_or_scalar (priv->detector_angle_y, 0), 0) &&
-              are_almost_equal (get_double_from_array_or_scalar (priv->detector_angle_z, 0), 0))) {
-            perpendicular_detector = FALSE;
-        }
-        if (!isinf (get_double_from_array_or_scalar (priv->source_position_y, i))) {
-            parallel_beam = FALSE;
-        }
+        parallel_beam = parallel_beam && isinf (get_double_from_array_or_scalar (priv->source_position_y, i));
     }
 
     g_log ("gbp", G_LOG_LEVEL_DEBUG, "burst: %d, parameter: %s with axis: %d, with volume: %d, "
