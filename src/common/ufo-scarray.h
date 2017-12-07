@@ -25,12 +25,15 @@
 typedef struct _UfoScarray UfoScarray;
 
 UfoScarray *ufo_scarray_new             (guint           num_elements,
-                                         GType           type);
+                                         GType           type,
+                                         GValue         *init_value);
 void        ufo_scarray_free            (UfoScarray     *scarray);
 void        ufo_scarray_set_value       (UfoScarray     *scarray,
                                          GValue         *value);
 void        ufo_scarray_get_value       (UfoScarray     *scarray,
                                          const GValue   *value);
+gint        ufo_scarray_get_int         (UfoScarray     *scarray,
+                                         guint           index);
 gfloat      ufo_scarray_get_float       (UfoScarray     *scarray,
                                          guint           index);
 gdouble     ufo_scarray_get_double      (UfoScarray     *scarray,

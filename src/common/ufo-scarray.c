@@ -24,16 +24,20 @@ struct _UfoScarray {
 };
 
 UfoScarray *
-ufo_scarray_new (guint num_elements, GType type)
+ufo_scarray_new (guint num_elements, GType type, GValue *init_value)
 {
     UfoScarray *scarray;
     GValue zero = G_VALUE_INIT;
     GValue value = G_VALUE_INIT;
 
-    g_value_init (&zero, G_TYPE_INT);
-    g_value_init (&value, type);
-    g_value_set_int (&zero, 0);
-    g_value_transform (&zero, &value);
+    if (init_value == NULL) {
+        g_value_init (&zero, G_TYPE_INT);
+        g_value_init (&value, type);
+        g_value_set_int (&zero, 0);
+        g_value_transform (&zero, &value);
+    } else {
+        value = *init_value;
+    }
 
     scarray = g_new0 (UfoScarray, 1);
     scarray->array = g_value_array_new (num_elements);
@@ -41,8 +45,10 @@ ufo_scarray_new (guint num_elements, GType type)
     for (guint i = 0; i < num_elements; i++)
         g_value_array_append (scarray->array, &value);
 
-    g_value_unset (&zero);
-    g_value_unset (&value);
+    if (init_value == NULL) {
+        g_value_unset (&zero);
+        g_value_unset (&value);
+    }
 
     return scarray;
 }
@@ -67,6 +73,17 @@ ufo_scarray_get_value (UfoScarray *scarray,
 {
     g_value_array_free (scarray->array);
     scarray->array = g_value_array_copy (g_value_get_boxed (value));
+}
+
+gint
+ufo_scarray_get_int (UfoScarray     *scarray,
+                     guint           index)
+{
+    if (scarray->array->n_values == 1)
+        return g_value_get_float (g_value_array_get_nth (scarray->array, 0));
+
+    g_assert (scarray->array->n_values > index);
+    return g_value_get_int (g_value_array_get_nth (scarray->array, index));
 }
 
 gfloat
