@@ -1253,6 +1253,7 @@ ufo_general_backproject_task_process (UfoTask *task,
             region_stop = ufo_scarray_get_double (priv->region, 1);
             region_step = ufo_scarray_get_double (priv->region, 2);
         }
+        g_log ("gbp", G_LOG_LEVEL_DEBUG, "region: %g %g %g", region_start, region_stop, region_step);
         priv->num_slices = (gsize) ceil ((region_stop - region_start) / region_step);
         max_global_mem_size_gvalue = ufo_gpu_node_get_info (node, UFO_GPU_NODE_INFO_GLOBAL_MEM_SIZE);
         max_global_mem_size = g_value_get_ulong (max_global_mem_size_gvalue);
