@@ -38,6 +38,10 @@
 #define REAL_SIZE_ARG_INDEX 1
 #define STATIC_ARG_OFFSET 19
 #define G_LOG_LEVEL_DOMAIN "gbp"
+#define REGION_SIZE(region) ((ufo_scarray_get_int ((region), 2)) == 0) ? 0 : \
+                            ((ufo_scarray_get_int ((region), 1) - ufo_scarray_get_int ((region), 0) - 1) /\
+                            ufo_scarray_get_int ((region), 2) + 1)
+#define NEXT_DIVISOR(dividend, divisor) ((dividend) + (divisor) - (dividend) % (divisor))
 #define DEFINE_FILL_SINCOS(type)                      \
 static void                                           \
 fill_sincos_##type (type *array, const gdouble angle) \

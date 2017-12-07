@@ -23,36 +23,6 @@ static UniRecoNodeProps node_props[] = {
     {"GEFORCE_GTX_TITAN", 24, 32}
 };
 
-gfloat
-get_float_from_array_or_scalar (GValueArray *array, guint index)
-{
-    /* *array* is either an array of length 1 and the first value is returned no
-     * matter what *index* is, or the *array* length must be sufficient to
-     * retrieve *index* */
-    if (array->n_values == 1) {
-        index = 0;
-    } else {
-        g_assert (array->n_values > index);
-    }
-
-    return EXTRACT_FLOAT (array, index);
-}
-
-gdouble
-get_double_from_array_or_scalar (GValueArray *array, guint index)
-{
-    /* *array* is either an array of length 1 and the first value is returned no
-     * matter what *index* is, or the *array* length must be sufficient to
-     * retrieve *index* */
-    if (array->n_values == 1) {
-        index = 0;
-    } else {
-        g_assert (array->n_values > index);
-    }
-
-    return EXTRACT_DOUBLE (array, index);
-}
-
 GHashTable *
 get_node_props_table (void)
 {
