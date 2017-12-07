@@ -473,43 +473,15 @@ is_detector_angle_almost_zero (UfoGeneralBackprojectTaskPrivate *priv)
 /*}}}*/
 
 /*{{{ String Helper functions*/
-static gint
-find_number_of_occurences (const gchar *haystack, const gchar *needle)
-{
-    gint num_occurences = 0;
-    const gchar *current = haystack;
-    guint needle_size = strlen (needle);
-
-    while ((current = strstr (current, needle)) != NULL) {
-        current += needle_size;
-        num_occurences++;
-    }
-
-    return num_occurences;
-}
-
 static gchar *
 replace_substring (const gchar *haystack, const gchar *needle, const gchar *replacement)
 {
-    const gchar *current = haystack, *previous = haystack;
-    gchar num_occurences = find_number_of_occurences (haystack, needle);
-    gint needle_size = strlen (needle);
-    gint replacement_size = strlen (replacement);
-    gchar *result = g_strnfill (strlen (haystack) + num_occurences *
-                                MAX(replacement_size - needle_size, 0), 0);
-    gchar *current_result = result;
+    GRegex *regex;
+    gchar *result;
 
-    while ((current = strstr (previous, needle)) != NULL) {
-        /* Copy original from behind the last occurence of needle to the beginning of the next one */
-        current_result = g_stpcpy (current_result, g_strndup (previous, (gint) (current - previous)));
-        /* Append the replacement substring */
-        current_result = g_stpcpy (current_result, replacement);
-        /* Continue from behind the needle */
-        previous = current + needle_size;
-    }
-    /* Copy the last chunk of code which doesn't have needle in it */
-    g_stpcpy (current_result, previous);
-
+    regex = g_regex_new (needle, 0, 0, NULL);
+    result = g_regex_replace_literal (regex, haystack, -1, 0, replacement, 0, NULL);
+    g_regex_unref (regex);
     return result;
 }
 /*}}}*/
