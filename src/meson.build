@@ -133,7 +133,7 @@ endforeach
 
 # generalized backproject and conebeam
 
-shared_module('general-backproject',
+shared_module('generalbackproject',
     sources: [
         'ufo-general-backproject-task.c',
         'common/ufo-conebeam.c',
@@ -145,7 +145,7 @@ shared_module('general-backproject',
     install_dir: plugin_install_dir,
 )
 
-shared_module('cone-beam-projection-weight',
+shared_module('conebeamprojectionweight',
     sources: [
         'ufo-cone-beam-projection-weight-task.c',
         'common/ufo-conebeam.c'
