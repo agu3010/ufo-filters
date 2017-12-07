@@ -30,7 +30,7 @@
 #endif
 
 #include <config.h>
-#include "common/conebeam.h"
+#include "common/ufo-conebeam.h"
 #include "common/ufo-scarray.h"
 #include "common/ufo-addressing.h"
 #include "ufo-general-backproject-task.h"
@@ -966,7 +966,7 @@ node_setup (UfoGeneralBackprojectTaskPrivate *priv,
     const gchar compiler_options_tmpl[] = "-cl-nv-maxrregcount=%u";
     gint compiler_options_length = (gint) (sizeof (compiler_options_tmpl) + 10);
     gchar *compiler_options = NULL;
-    UniRecoNodeProps *node_props;
+    UfoUniRecoNodeProps *node_props;
 
     /* GPU type specific settings */
     node_name_gvalue = ufo_gpu_node_get_info (node, UFO_GPU_NODE_INFO_NAME);
@@ -1128,7 +1128,7 @@ ufo_general_backproject_task_setup (UfoTask *task,
         return;
     }
 
-    priv->node_props_table = get_node_props_table ();
+    priv->node_props_table = ufo_get_node_props_table ();
 
     /* Set OpenCL variables */
     priv->context = ufo_resources_get_context (resources);

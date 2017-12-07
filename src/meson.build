@@ -136,7 +136,7 @@ endforeach
 shared_module('general-backproject',
     sources: [
         'ufo-general-backproject-task.c',
-        'common/conebeam.c',
+        'common/ufo-conebeam.c',
         'common/ufo-scarray.c',
     ],
     dependencies: deps,
@@ -148,7 +148,7 @@ shared_module('general-backproject',
 shared_module('cone-beam-projection-weight',
     sources: [
         'ufo-cone-beam-projection-weight-task.c',
-        'common/conebeam.c'
+        'common/ufo-conebeam.c'
     ],
     dependencies: deps,
     name_prefix: 'libufofilter',

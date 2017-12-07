@@ -16,19 +16,22 @@
  * You should have received a copy of the GNU Lesser General Public
  * License along with this library.  If not, see <http://www.gnu.org/licenses/>.
  */
+#include "ufo-conebeam.h"
 
-#ifndef UFO_CONEBEAM_H
-#define UFO_CONEBEAM_H
+static UfoUniRecoNodeProps node_props[] = {
+    {"GENERIC", 8, 0},
+    {"GEFORCE_GTX_TITAN", 24, 32}
+};
 
-#include <glib.h>
-#include <glib-object.h>
+GHashTable *
+ufo_get_node_props_table (void)
+{
+    guint i;
+    GHashTable *table = g_hash_table_new (g_str_hash, g_str_equal);
 
-typedef struct {
-    gchar *name;
-    guint burst;
-    guint max_regcount;
-} UniRecoNodeProps;
+    for (i = 0; i < sizeof (node_props) / sizeof (UfoUniRecoNodeProps); i++) {
+        g_hash_table_insert (table, node_props[i].name, &node_props[i]);
+    }
 
-GHashTable *get_node_props_table (void);
-
-#endif
+    return table;
+}
