@@ -1230,6 +1230,10 @@ ufo_general_backproject_task_process (UfoTask *task,
     if (!priv->kernel) {
         /* First iteration, setup kernels */
         node_setup (priv, node);
+        if (!priv->kernel) {
+            /* Something went wrong */
+            return FALSE;
+        }
     }
 
     if (priv->count >= priv->num_projections / priv->burst * priv->burst) {
