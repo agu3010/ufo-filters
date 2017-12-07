@@ -391,20 +391,16 @@ get_type_size (StoreType type)
 static gulong
 get_integer_maximum (const gchar *type_name)
 {
-    gint is_uchar = !g_strcmp0 (type_name, "uchar");
-    gint is_ushort = !g_strcmp0 (type_name, "ushort");
-    gint is_uint = !g_strcmp0 (type_name, "uint");
-    gulong maxval = 0;
+    if (!g_strcmp0 (type_name, "uchar"))
+        return 0xFF;
 
-    if (is_uchar) {
-        maxval = 0xFF;
-    } else if (is_ushort) {
-        maxval = 0xFFFF;
-    } else if (is_uint) {
-        maxval = 0xFFFFFFFF;
-    }
+    if (!g_strcmp0 (type_name, "ushort"))
+        return 0xFFFF;
 
-    return maxval;
+    if (!g_strcmp0 (type_name, "uint"))
+        return 0xFFFFFFFF;
+
+    return 0;
 }
 
 static gboolean
