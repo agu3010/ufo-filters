@@ -1033,9 +1033,9 @@ node_setup (UfoGeneralBackprojectTaskPrivate *priv,
     /* Assume the most efficient geometry, change if necessary */
     with_axis = is_axis_parameter (priv->parameter) || !is_axis_angle_almost_zero (priv);
     with_volume = is_volume_parameter (priv->parameter) || !is_volume_angle_almost_zero (priv);
-    perpendicular_detector = is_detector_rotation_parameter (priv->parameter) ||
-                             is_detector_position_parameter (priv->parameter) ||
-                             !is_detector_angle_almost_zero (priv);
+    perpendicular_detector = !is_detector_rotation_parameter (priv->parameter) &&
+                             !is_detector_position_parameter (priv->parameter) &&
+                             is_detector_angle_almost_zero (priv);
 
     parallel_beam = TRUE;
 
