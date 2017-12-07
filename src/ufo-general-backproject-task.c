@@ -726,9 +726,9 @@ make_transformations (gint burst, gboolean with_axis, gboolean perpendicular_det
         "\tcoeff = native_divide (source_position.y - detector_position.y, (source_position.y - voxel.y));\n";
     const gchar *detector_transformation =
         "\tvoxel -= detector_position;\n"
-        "\tvoxel = rotate_x ((cfloat2)(-detector_x.x, detector_x.y), voxel);\n"
-        "\tvoxel = rotate_y ((cfloat2)(-detector_y.x, detector_y.y), voxel);\n"
-        "\tvoxel = rotate_z ((cfloat2)(-detector_z.x, detector_z.y), voxel);\n";
+        "\tvoxel = rotate_x ((cfloat2)(-detector_angle_x.x, detector_angle_x.y), voxel);\n"
+        "\tvoxel = rotate_y ((cfloat2)(-detector_angle_y.x, detector_angle_y.y), voxel);\n"
+        "\tvoxel = rotate_z ((cfloat2)(-detector_angle_z.x, detector_angle_z.y), voxel);\n";
 
     code_fmt = g_strnfill (snippet_size, 0);
     code = g_strnfill (size, 0);
