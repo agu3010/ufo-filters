@@ -24,7 +24,7 @@ struct _UfoScarray {
 };
 
 UfoScarray *
-ufo_scarray_new (guint n_dims, GType type)
+ufo_scarray_new (guint num_elements, GType type)
 {
     UfoScarray *scarray;
     GValue zero = G_VALUE_INIT;
@@ -36,9 +36,9 @@ ufo_scarray_new (guint n_dims, GType type)
     g_value_transform (&zero, &value);
 
     scarray = g_new0 (UfoScarray, 1);
-    scarray->array = g_value_array_new (n_dims);
+    scarray->array = g_value_array_new (num_elements);
 
-    for (guint i = 0; i < n_dims; i++)
+    for (guint i = 0; i < num_elements; i++)
         g_value_array_append (scarray->array, &value);
 
     g_value_unset (&zero);
