@@ -113,7 +113,7 @@ set(lamino_backproject_aux_SRCS
     lamino-roi.c)
 
 set(cone_beam_projection_weight_aux_SRCS
-    common/conebeam.c)
+    common/ufo-scarray.c)
 
 set(general_backproject_aux_SRCS
     common/conebeam.c

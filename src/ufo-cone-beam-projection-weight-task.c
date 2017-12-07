@@ -27,15 +27,12 @@
 #endif
 
 #include "ufo-cone-beam-projection-weight-task.h"
-#include "common/conebeam.h"
+#include "common/ufo-scarray.h"
 
 
 struct _UfoConeBeamProjectionWeightTaskPrivate {
     /* Properties */
-    GValueArray *center_x, *center_z;
-    GValueArray *source_distance;
-    GValueArray *detector_distance;
-    GValueArray *axis_angle_x;
+    UfoScarray *center_x, *center_z, *source_distance, *detector_distance, *axis_angle_x;
     /* Private */
     guint count;
     /* OpenCL */
@@ -135,11 +132,11 @@ ufo_cone_beam_projection_weight_task_process (UfoTask *task,
     profiler = ufo_task_node_get_profiler (UFO_TASK_NODE (task));
     in_mem = ufo_buffer_get_device_array (inputs[0], cmd_queue);
     out_mem = ufo_buffer_get_device_array (output, cmd_queue);
-    cos_angle = cos (get_float_from_array_or_scalar (priv->axis_angle_x, priv->count));
-    center[0] = get_float_from_array_or_scalar (priv->center_x, priv->count);
-    center[1] = get_float_from_array_or_scalar (priv->center_z, priv->count);
-    source_distance = get_float_from_array_or_scalar (priv->source_distance, priv->count);
-    detector_distance = get_float_from_array_or_scalar (priv->detector_distance, priv->count);
+    cos_angle = cos (ufo_scarray_get_float (priv->axis_angle_x, priv->count));
+    center[0] = ufo_scarray_get_float (priv->center_x, priv->count);
+    center[1] = ufo_scarray_get_float (priv->center_z, priv->count);
+    source_distance = ufo_scarray_get_float (priv->source_distance, priv->count);
+    detector_distance = ufo_scarray_get_float (priv->detector_distance, priv->count);
     overall_distance = source_distance + detector_distance;
     magnification_recip = source_distance / overall_distance;
     if (cos_angle > 0.9999999f) {
@@ -167,33 +164,22 @@ ufo_cone_beam_projection_weight_task_set_property (GObject *object,
                                                    GParamSpec *pspec)
 {
     UfoConeBeamProjectionWeightTaskPrivate *priv = UFO_CONE_BEAM_PROJECTION_WEIGHT_TASK_GET_PRIVATE (object);
-    GValueArray *array;
 
     switch (property_id) {
         case PROP_CENTER_X:
-            array = (GValueArray *) g_value_get_boxed (value);
-            g_value_array_free (priv->center_x);
-            priv->center_x = g_value_array_copy (array);
+            ufo_scarray_get_value (priv->center_x, value);
             break;
         case PROP_CENTER_Z:
-            array = (GValueArray *) g_value_get_boxed (value);
-            g_value_array_free (priv->center_z);
-            priv->center_z = g_value_array_copy (array);
+            ufo_scarray_get_value (priv->center_z, value);
             break;
         case PROP_SOURCE_DISTANCE:
-            array = (GValueArray *) g_value_get_boxed (value);
-            g_value_array_free (priv->source_distance);
-            priv->source_distance = g_value_array_copy (array);
+            ufo_scarray_get_value (priv->source_distance, value);
             break;
         case PROP_DETECTOR_DISTANCE:
-            array = (GValueArray *) g_value_get_boxed (value);
-            g_value_array_free (priv->detector_distance);
-            priv->detector_distance = g_value_array_copy (array);
+            ufo_scarray_get_value (priv->detector_distance, value);
             break;
         case PROP_AXIS_ANGLE_X:
-            array = (GValueArray *) g_value_get_boxed (value);
-            g_value_array_free (priv->axis_angle_x);
-            priv->axis_angle_x = g_value_array_copy (array);
+            ufo_scarray_get_value (priv->axis_angle_x, value);
             break;
         default:
             G_OBJECT_WARN_INVALID_PROPERTY_ID (object, property_id, pspec);
@@ -211,19 +197,19 @@ ufo_cone_beam_projection_weight_task_get_property (GObject *object,
 
     switch (property_id) {
         case PROP_CENTER_X:
-            g_value_set_boxed (value, priv->center_x);
+            ufo_scarray_set_value (priv->center_x, value);
             break;
         case PROP_CENTER_Z:
-            g_value_set_boxed (value, priv->center_z);
+            ufo_scarray_set_value (priv->center_z, value);
             break;
         case PROP_SOURCE_DISTANCE:
-            g_value_set_boxed (value, priv->source_distance);
+            ufo_scarray_set_value (priv->source_distance, value);
             break;
         case PROP_DETECTOR_DISTANCE:
-            g_value_set_boxed (value, priv->detector_distance);
+            ufo_scarray_set_value (priv->detector_distance, value);
             break;
         case PROP_AXIS_ANGLE_X:
-            g_value_set_boxed (value, priv->axis_angle_x);
+            ufo_scarray_set_value (priv->axis_angle_x, value);
             break;
         default:
             G_OBJECT_WARN_INVALID_PROPERTY_ID (object, property_id, pspec);
@@ -322,14 +308,12 @@ ufo_cone_beam_projection_weight_task_class_init (UfoConeBeamProjectionWeightTask
 static void
 ufo_cone_beam_projection_weight_task_init(UfoConeBeamProjectionWeightTask *self)
 {
-    GValue float_zero = G_VALUE_INIT;
-    g_value_init (&float_zero, G_TYPE_FLOAT);
     self->priv = UFO_CONE_BEAM_PROJECTION_WEIGHT_TASK_GET_PRIVATE(self);
-    self->priv->center_x = g_value_array_new (0);
-    self->priv->center_z = g_value_array_new (0);
-    self->priv->source_distance = g_value_array_new (0);
-    self->priv->detector_distance = g_value_array_new (0);
-    self->priv->axis_angle_x = g_value_array_new (1);
-    g_value_array_insert (self->priv->axis_angle_x, 0, &float_zero);
+
+    self->priv->center_x = ufo_scarray_new (0, G_TYPE_DOUBLE, NULL);
+    self->priv->center_z = ufo_scarray_new (0, G_TYPE_DOUBLE, NULL);
+    self->priv->source_distance = ufo_scarray_new (0, G_TYPE_DOUBLE, NULL);
+    self->priv->detector_distance = ufo_scarray_new (0, G_TYPE_DOUBLE, NULL);
+    self->priv->axis_angle_x = ufo_scarray_new (1, G_TYPE_DOUBLE, NULL);
     self->priv->count = 0;
 }
