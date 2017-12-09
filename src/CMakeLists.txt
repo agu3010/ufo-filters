@@ -117,7 +117,8 @@ set(cone_beam_projection_weight_aux_SRCS
 
 set(general_backproject_aux_SRCS
     common/ufo-conebeam.c
-    common/ufo-scarray.c)
+    common/ufo-scarray.c
+    common/ufo-ctlab.c)
 
 file(GLOB ufofilter_KERNELS "kernels/*.cl")
 #}}}

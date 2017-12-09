@@ -32,6 +32,7 @@
 #include <config.h>
 #include "common/ufo-conebeam.h"
 #include "common/ufo-scarray.h"
+#include "common/ufo-ctlab.h"
 #include "common/ufo-addressing.h"
 #include "ufo-general-backproject-task.h"
 
@@ -122,25 +123,25 @@ set_static_args_##type (UfoGeneralBackprojectTaskPrivate *priv,                 
         region_y[1] = 1.0f;                                                                                              \
     }                                                                                                                    \
     slice_z_position = (type) priv->z;                                                                                   \
-    fill_sincos_##type (axis_x, ufo_scarray_get_double (priv->axis_angle_x, priv->count));                               \
-    fill_sincos_##type (axis_y, ufo_scarray_get_double (priv->axis_angle_y, priv->count));                               \
-    fill_sincos_##type (axis_z, ufo_scarray_get_double (priv->axis_angle_z, priv->count));                               \
-    fill_sincos_##type (volume_x, ufo_scarray_get_double (priv->volume_angle_x, priv->count));                           \
-    fill_sincos_##type (volume_y, ufo_scarray_get_double (priv->volume_angle_y, priv->count));                           \
-    fill_sincos_##type (volume_z, ufo_scarray_get_double (priv->volume_angle_z, priv->count));                           \
-    fill_sincos_##type (detector_x, ufo_scarray_get_double (priv->detector_angle_x, priv->count));                       \
-    fill_sincos_##type (detector_y, ufo_scarray_get_double (priv->detector_angle_y, priv->count));                       \
-    fill_sincos_##type (detector_z, ufo_scarray_get_double (priv->detector_angle_z, priv->count));                       \
-    center_position[0] = (type) ufo_scarray_get_double (priv->center_x, priv->count);                                    \
-    center_position[2] = (type) ufo_scarray_get_double (priv->center_z, priv->count);                                    \
+    fill_sincos_##type (axis_x, ufo_scarray_get_double (priv->lab->axis->angle->x, priv->count));                        \
+    fill_sincos_##type (axis_y, ufo_scarray_get_double (priv->lab->axis->angle->y, priv->count));                        \
+    fill_sincos_##type (axis_z, ufo_scarray_get_double (priv->lab->axis->angle->z, priv->count));                        \
+    fill_sincos_##type (volume_x, ufo_scarray_get_double (priv->lab->volume_angle->x, priv->count));                     \
+    fill_sincos_##type (volume_y, ufo_scarray_get_double (priv->lab->volume_angle->y, priv->count));                     \
+    fill_sincos_##type (volume_z, ufo_scarray_get_double (priv->lab->volume_angle->z, priv->count));                     \
+    fill_sincos_##type (detector_x, ufo_scarray_get_double (priv->lab->detector->angle->x, priv->count));                \
+    fill_sincos_##type (detector_y, ufo_scarray_get_double (priv->lab->detector->angle->y, priv->count));                \
+    fill_sincos_##type (detector_z, ufo_scarray_get_double (priv->lab->detector->angle->z, priv->count));                \
+    center_position[0] = (type) ufo_scarray_get_double (priv->lab->axis->position->x, priv->count);                      \
+    center_position[2] = (type) ufo_scarray_get_double (priv->lab->axis->position->z, priv->count);                      \
     /* TODO: use only 2D center in the kernel */                                                                         \
     center_position[1] = 0.0f;                                                                                           \
-    source_position[0] = (type) ufo_scarray_get_double (priv->source_position_x, priv->count);                           \
-    source_position[1] = (type) ufo_scarray_get_double (priv->source_position_y, priv->count);                           \
-    source_position[2] = (type) ufo_scarray_get_double (priv->source_position_z, priv->count);                           \
-    detector_position[0] = (type) ufo_scarray_get_double (priv->detector_position_x, priv->count);                       \
-    detector_position[1] = (type) ufo_scarray_get_double (priv->detector_position_y, priv->count);                       \
-    detector_position[2] = (type) ufo_scarray_get_double (priv->detector_position_z, priv->count);                       \
+    source_position[0] = (type) ufo_scarray_get_double (priv->lab->source_position->x, priv->count);                     \
+    source_position[1] = (type) ufo_scarray_get_double (priv->lab->source_position->y, priv->count);                     \
+    source_position[2] = (type) ufo_scarray_get_double (priv->lab->source_position->z, priv->count);                     \
+    detector_position[0] = (type) ufo_scarray_get_double (priv->lab->detector->position->x, priv->count);                \
+    detector_position[1] = (type) ufo_scarray_get_double (priv->lab->detector->position->y, priv->count);                \
+    detector_position[2] = (type) ufo_scarray_get_double (priv->lab->detector->position->z, priv->count);                \
     norm_factor = (type) norm_factor;                                                                                    \
     gray_limit[0] = (type) priv->gray_map_min;                                                                           \
     gray_limit[1] = (type) gray_delta_recip;                                                                             \
@@ -276,11 +277,8 @@ struct _UfoGeneralBackprojectTaskPrivate {
     /* Properties */
     guint burst;
     gdouble z;
-    UfoScarray *region, *region_x, *region_y, *center_x, *center_z, *source_position_x,
-               *source_position_y, *source_position_z, *detector_position_x, *detector_position_y,
-               *detector_position_z, *detector_angle_x, *detector_angle_y, *detector_angle_z,
-               *axis_angle_x, *axis_angle_y, *axis_angle_z, *volume_angle_x, *volume_angle_y,
-               *volume_angle_z;
+    UfoScarray *region, *region_x, *region_y;
+    UfoCTlab *lab;
     ComputeType compute_type, result_type;
     StoreType store_type;
     Parameter parameter;
@@ -472,25 +470,25 @@ is_parameter_angular (Parameter parameter)
 static gboolean
 is_axis_angle_almost_zero (UfoGeneralBackprojectTaskPrivate *priv)
 {
-    return are_almost_equal (ufo_scarray_get_double (priv->axis_angle_x, 0), 0) &&
-           are_almost_equal (ufo_scarray_get_double (priv->axis_angle_y, 0), 0) &&
-           are_almost_equal (ufo_scarray_get_double (priv->axis_angle_z, 0), 0);
+    return are_almost_equal (ufo_scarray_get_double (priv->lab->axis->angle->x, 0), 0) &&
+           are_almost_equal (ufo_scarray_get_double (priv->lab->axis->angle->y, 0), 0) &&
+           are_almost_equal (ufo_scarray_get_double (priv->lab->axis->angle->z, 0), 0);
 }
 
 static gboolean
 is_volume_angle_almost_zero (UfoGeneralBackprojectTaskPrivate *priv)
 {
-    return are_almost_equal (ufo_scarray_get_double (priv->volume_angle_x, 0), 0) &&
-           are_almost_equal (ufo_scarray_get_double (priv->volume_angle_y, 0), 0) &&
-           are_almost_equal (ufo_scarray_get_double (priv->volume_angle_z, 0), 0);
+    return are_almost_equal (ufo_scarray_get_double (priv->lab->volume_angle->x, 0), 0) &&
+           are_almost_equal (ufo_scarray_get_double (priv->lab->volume_angle->y, 0), 0) &&
+           are_almost_equal (ufo_scarray_get_double (priv->lab->volume_angle->z, 0), 0);
 }
 
 static gboolean
 is_detector_angle_almost_zero (UfoGeneralBackprojectTaskPrivate *priv)
 {
-    return are_almost_equal (ufo_scarray_get_double (priv->detector_angle_x, 0), 0) &&
-           are_almost_equal (ufo_scarray_get_double (priv->detector_angle_y, 0), 0) &&
-           are_almost_equal (ufo_scarray_get_double (priv->detector_angle_z, 0), 0);
+    return are_almost_equal (ufo_scarray_get_double (priv->lab->detector->angle->x, 0), 0) &&
+           are_almost_equal (ufo_scarray_get_double (priv->lab->detector->angle->y, 0), 0) &&
+           are_almost_equal (ufo_scarray_get_double (priv->lab->detector->angle->z, 0), 0);
 }
 /*}}}*/
 
@@ -1188,25 +1186,25 @@ node_setup (UfoGeneralBackprojectTaskPrivate *priv,
     parallel_beam = TRUE;
     /* Actual parameter setup */
     for (i = 0; i < priv->num_projections; i++) {
-        parallel_beam = parallel_beam && isinf (ufo_scarray_get_double (priv->source_position_y, i));
+        parallel_beam = parallel_beam && isinf (ufo_scarray_get_double (priv->lab->source_position->y, i));
     }
-    vectorized = (ufo_scarray_has_n_values (priv->axis_angle_x, priv->num_projections) ||
-                  ufo_scarray_has_n_values (priv->axis_angle_y, priv->num_projections) ||
-                  ufo_scarray_has_n_values (priv->axis_angle_z, priv->num_projections) ||
-                  ufo_scarray_has_n_values (priv->volume_angle_x, priv->num_projections) ||
-                  ufo_scarray_has_n_values (priv->volume_angle_y, priv->num_projections) ||
-                  ufo_scarray_has_n_values (priv->volume_angle_z, priv->num_projections) ||
-                  ufo_scarray_has_n_values (priv->detector_angle_x, priv->num_projections) ||
-                  ufo_scarray_has_n_values (priv->detector_angle_y, priv->num_projections) ||
-                  ufo_scarray_has_n_values (priv->detector_angle_z, priv->num_projections) ||
-                  ufo_scarray_has_n_values (priv->detector_position_x, priv->num_projections) ||
-                  ufo_scarray_has_n_values (priv->detector_position_y, priv->num_projections) ||
-                  ufo_scarray_has_n_values (priv->detector_position_z, priv->num_projections) ||
-                  ufo_scarray_has_n_values (priv->source_position_x, priv->num_projections) ||
-                  ufo_scarray_has_n_values (priv->source_position_y, priv->num_projections) ||
-                  ufo_scarray_has_n_values (priv->source_position_z, priv->num_projections) ||
-                  ufo_scarray_has_n_values (priv->center_x, priv->num_projections) ||
-                  ufo_scarray_has_n_values (priv->center_z, priv->num_projections));
+    vectorized = (ufo_scarray_has_n_values (priv->lab->axis->angle->x, priv->num_projections) ||
+                  ufo_scarray_has_n_values (priv->lab->axis->angle->y, priv->num_projections) ||
+                  ufo_scarray_has_n_values (priv->lab->axis->angle->z, priv->num_projections) ||
+                  ufo_scarray_has_n_values (priv->lab->volume_angle->x, priv->num_projections) ||
+                  ufo_scarray_has_n_values (priv->lab->volume_angle->y, priv->num_projections) ||
+                  ufo_scarray_has_n_values (priv->lab->volume_angle->z, priv->num_projections) ||
+                  ufo_scarray_has_n_values (priv->lab->detector->angle->x, priv->num_projections) ||
+                  ufo_scarray_has_n_values (priv->lab->detector->angle->y, priv->num_projections) ||
+                  ufo_scarray_has_n_values (priv->lab->detector->angle->z, priv->num_projections) ||
+                  ufo_scarray_has_n_values (priv->lab->detector->position->x, priv->num_projections) ||
+                  ufo_scarray_has_n_values (priv->lab->detector->position->y, priv->num_projections) ||
+                  ufo_scarray_has_n_values (priv->lab->detector->position->z, priv->num_projections) ||
+                  ufo_scarray_has_n_values (priv->lab->source_position->x, priv->num_projections) ||
+                  ufo_scarray_has_n_values (priv->lab->source_position->y, priv->num_projections) ||
+                  ufo_scarray_has_n_values (priv->lab->source_position->z, priv->num_projections) ||
+                  ufo_scarray_has_n_values (priv->lab->axis->position->x, priv->num_projections) ||
+                  ufo_scarray_has_n_values (priv->lab->axis->position->z, priv->num_projections));
 
     g_log ("gbp", G_LOG_LEVEL_DEBUG, "vectorized: %d, parameter: %s with axis: %d, with volume: %d, "
            "perpendicular detector: %d, parallel beam: %d, "
@@ -1615,55 +1613,55 @@ ufo_general_backproject_task_set_property (GObject *object,
             ufo_scarray_get_value (priv->region_y, value);
             break;
         case PROP_CENTER_X:
-            ufo_scarray_get_value (priv->center_x, value);
+            ufo_scarray_get_value (priv->lab->axis->position->x, value);
             break;
         case PROP_CENTER_Z:
-            ufo_scarray_get_value (priv->center_z, value);
+            ufo_scarray_get_value (priv->lab->axis->position->z, value);
             break;
         case PROP_SOURCE_POSITION_X:
-            ufo_scarray_get_value (priv->source_position_x, value);
+            ufo_scarray_get_value (priv->lab->source_position->x, value);
             break;
         case PROP_SOURCE_POSITION_Y:
-            ufo_scarray_get_value (priv->source_position_y, value);
+            ufo_scarray_get_value (priv->lab->source_position->y, value);
             break;
         case PROP_SOURCE_POSITION_Z:
-            ufo_scarray_get_value (priv->source_position_z, value);
+            ufo_scarray_get_value (priv->lab->source_position->z, value);
             break;
         case PROP_DETECTOR_POSITION_X:
-            ufo_scarray_get_value (priv->detector_position_x, value);
+            ufo_scarray_get_value (priv->lab->detector->position->x, value);
             break;
         case PROP_DETECTOR_POSITION_Y:
-            ufo_scarray_get_value (priv->detector_position_y, value);
+            ufo_scarray_get_value (priv->lab->detector->position->y, value);
             break;
         case PROP_DETECTOR_POSITION_Z:
-            ufo_scarray_get_value (priv->detector_position_z, value);
+            ufo_scarray_get_value (priv->lab->detector->position->z, value);
             break;
         case PROP_DETECTOR_ANGLE_X:
-            ufo_scarray_get_value (priv->detector_angle_x, value);
+            ufo_scarray_get_value (priv->lab->detector->angle->x, value);
             break;
         case PROP_DETECTOR_ANGLE_Y:
-            ufo_scarray_get_value (priv->detector_angle_y, value);
+            ufo_scarray_get_value (priv->lab->detector->angle->y, value);
             break;
         case PROP_DETECTOR_ANGLE_Z:
-            ufo_scarray_get_value (priv->detector_angle_z, value);
+            ufo_scarray_get_value (priv->lab->detector->angle->z, value);
             break;
         case PROP_AXIS_ANGLE_X:
-            ufo_scarray_get_value (priv->axis_angle_x, value);
+            ufo_scarray_get_value (priv->lab->axis->angle->x, value);
             break;
         case PROP_AXIS_ANGLE_Y:
-            ufo_scarray_get_value (priv->axis_angle_y, value);
+            ufo_scarray_get_value (priv->lab->axis->angle->y, value);
             break;
         case PROP_AXIS_ANGLE_Z:
-            ufo_scarray_get_value (priv->axis_angle_z, value);
+            ufo_scarray_get_value (priv->lab->axis->angle->z, value);
             break;
         case PROP_VOLUME_ANGLE_X:
-            ufo_scarray_get_value (priv->volume_angle_x, value);
+            ufo_scarray_get_value (priv->lab->volume_angle->x, value);
             break;
         case PROP_VOLUME_ANGLE_Y:
-            ufo_scarray_get_value (priv->volume_angle_y, value);
+            ufo_scarray_get_value (priv->lab->volume_angle->y, value);
             break;
         case PROP_VOLUME_ANGLE_Z:
-            ufo_scarray_get_value (priv->volume_angle_z, value);
+            ufo_scarray_get_value (priv->lab->volume_angle->z, value);
             break;
         case PROP_NUM_PROJECTIONS:
             priv->num_projections = g_value_get_uint (value);
@@ -1723,55 +1721,55 @@ ufo_general_backproject_task_get_property (GObject *object,
             ufo_scarray_set_value (priv->region_y, value);
             break;
         case PROP_CENTER_X:
-            ufo_scarray_set_value (priv->center_x, value);
+            ufo_scarray_set_value (priv->lab->axis->position->x, value);
             break;
         case PROP_CENTER_Z:
-            ufo_scarray_set_value (priv->center_z, value);
+            ufo_scarray_set_value (priv->lab->axis->position->z, value);
             break;
         case PROP_SOURCE_POSITION_X:
-            ufo_scarray_set_value (priv->source_position_x, value);
+            ufo_scarray_set_value (priv->lab->source_position->x, value);
             break;
         case PROP_SOURCE_POSITION_Y:
-            ufo_scarray_set_value (priv->source_position_y, value);
+            ufo_scarray_set_value (priv->lab->source_position->y, value);
             break;
         case PROP_SOURCE_POSITION_Z:
-            ufo_scarray_set_value (priv->source_position_z, value);
+            ufo_scarray_set_value (priv->lab->source_position->z, value);
             break;
         case PROP_DETECTOR_POSITION_X:
-            ufo_scarray_set_value (priv->detector_position_x, value);
+            ufo_scarray_set_value (priv->lab->detector->position->x, value);
             break;
         case PROP_DETECTOR_POSITION_Y:
-            ufo_scarray_set_value (priv->detector_position_y, value);
+            ufo_scarray_set_value (priv->lab->detector->position->y, value);
             break;
         case PROP_DETECTOR_POSITION_Z:
-            ufo_scarray_set_value (priv->detector_position_z, value);
+            ufo_scarray_set_value (priv->lab->detector->position->z, value);
             break;
         case PROP_DETECTOR_ANGLE_X:
-            ufo_scarray_set_value (priv->detector_angle_x, value);
+            ufo_scarray_set_value (priv->lab->detector->angle->x, value);
             break;
         case PROP_DETECTOR_ANGLE_Y:
-            ufo_scarray_set_value (priv->detector_angle_y, value);
+            ufo_scarray_set_value (priv->lab->detector->angle->y, value);
             break;
         case PROP_DETECTOR_ANGLE_Z:
-            ufo_scarray_set_value (priv->detector_angle_z, value);
+            ufo_scarray_set_value (priv->lab->detector->angle->z, value);
             break;
         case PROP_AXIS_ANGLE_X:
-            ufo_scarray_set_value (priv->axis_angle_x, value);
+            ufo_scarray_set_value (priv->lab->axis->angle->x, value);
             break;
         case PROP_AXIS_ANGLE_Y:
-            ufo_scarray_set_value (priv->axis_angle_y, value);
+            ufo_scarray_set_value (priv->lab->axis->angle->y, value);
             break;
         case PROP_AXIS_ANGLE_Z:
-            ufo_scarray_set_value (priv->axis_angle_z, value);
+            ufo_scarray_set_value (priv->lab->axis->angle->z, value);
             break;
         case PROP_VOLUME_ANGLE_X:
-            ufo_scarray_set_value (priv->volume_angle_x, value);
+            ufo_scarray_set_value (priv->lab->volume_angle->x, value);
             break;
         case PROP_VOLUME_ANGLE_Y:
-            ufo_scarray_set_value (priv->volume_angle_y, value);
+            ufo_scarray_set_value (priv->lab->volume_angle->y, value);
             break;
         case PROP_VOLUME_ANGLE_Z:
-            ufo_scarray_set_value (priv->volume_angle_z, value);
+            ufo_scarray_set_value (priv->lab->volume_angle->z, value);
             break;
         case PROP_NUM_PROJECTIONS:
             g_value_set_uint (value, priv->num_projections);
@@ -1814,23 +1812,7 @@ ufo_general_backproject_task_finalize (GObject *object)
     ufo_scarray_free (priv->region);
     ufo_scarray_free (priv->region_x);
     ufo_scarray_free (priv->region_y);
-    ufo_scarray_free (priv->center_x);
-    ufo_scarray_free (priv->center_z);
-    ufo_scarray_free (priv->source_position_x);
-    ufo_scarray_free (priv->source_position_y);
-    ufo_scarray_free (priv->source_position_z);
-    ufo_scarray_free (priv->detector_position_x);
-    ufo_scarray_free (priv->detector_position_y);
-    ufo_scarray_free (priv->detector_position_z);
-    ufo_scarray_free (priv->detector_angle_x);
-    ufo_scarray_free (priv->detector_angle_y);
-    ufo_scarray_free (priv->detector_angle_z);
-    ufo_scarray_free (priv->axis_angle_x);
-    ufo_scarray_free (priv->axis_angle_y);
-    ufo_scarray_free (priv->axis_angle_z);
-    ufo_scarray_free (priv->volume_angle_x);
-    ufo_scarray_free (priv->volume_angle_y);
-    ufo_scarray_free (priv->volume_angle_z);
+    ufo_ctlab_free (priv->lab);
     g_hash_table_destroy (priv->node_props_table);
 
     if (priv->projections) {
@@ -2155,9 +2137,6 @@ static void
 ufo_general_backproject_task_init(UfoGeneralBackprojectTask *self)
 {
     self->priv = UFO_GENERAL_BACKPROJECT_TASK_GET_PRIVATE(self);
-    GValue double_value = G_VALUE_INIT;
-    g_value_init (&double_value, G_TYPE_DOUBLE);
-    g_value_set_double (&double_value, -INFINITY);
 
     /* Scalars */
     self->priv->burst = 0;
@@ -2176,30 +2155,12 @@ ufo_general_backproject_task_init(UfoGeneralBackprojectTask *self)
     self->priv->region = ufo_scarray_new (3, G_TYPE_DOUBLE, NULL);
     self->priv->region_x = ufo_scarray_new (3, G_TYPE_INT, NULL);
     self->priv->region_y = ufo_scarray_new (3, G_TYPE_INT, NULL);
-    self->priv->center_x = ufo_scarray_new (1, G_TYPE_DOUBLE, NULL);
-    self->priv->center_z = ufo_scarray_new (1, G_TYPE_DOUBLE, NULL);
-    self->priv->axis_angle_x = ufo_scarray_new (1, G_TYPE_DOUBLE, NULL);
-    self->priv->axis_angle_y = ufo_scarray_new (1, G_TYPE_DOUBLE, NULL);
-    self->priv->axis_angle_z = ufo_scarray_new (1, G_TYPE_DOUBLE, NULL);
-    self->priv->volume_angle_x = ufo_scarray_new (1, G_TYPE_DOUBLE, NULL);
-    self->priv->volume_angle_y = ufo_scarray_new (1, G_TYPE_DOUBLE, NULL);
-    self->priv->volume_angle_z = ufo_scarray_new (1, G_TYPE_DOUBLE, NULL);
-    self->priv->source_position_x = ufo_scarray_new (1, G_TYPE_DOUBLE, NULL);
-    self->priv->source_position_y = ufo_scarray_new (1, G_TYPE_DOUBLE, &double_value);
-    self->priv->source_position_z = ufo_scarray_new (1, G_TYPE_DOUBLE, NULL);
-    self->priv->detector_position_x = ufo_scarray_new (1, G_TYPE_DOUBLE, NULL);
-    self->priv->detector_position_y = ufo_scarray_new (1, G_TYPE_DOUBLE, NULL);
-    self->priv->detector_position_z = ufo_scarray_new (1, G_TYPE_DOUBLE, NULL);
-    self->priv->detector_angle_x = ufo_scarray_new (1, G_TYPE_DOUBLE, NULL);
-    self->priv->detector_angle_y = ufo_scarray_new (1, G_TYPE_DOUBLE, NULL);
-    self->priv->detector_angle_z = ufo_scarray_new (1, G_TYPE_DOUBLE, NULL);
+    self->priv->lab = ufo_ctlab_new ();
 
     /* Private */
     self->priv->num_slices = 0;
     self->priv->num_slices_per_chunk = 0;
     self->priv->count = 0;
     self->priv->generated = 0;
-
-    g_value_unset (&double_value);
 }
 /*}}}*/
