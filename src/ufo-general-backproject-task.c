@@ -30,6 +30,7 @@
 #endif
 
 #include <config.h>
+#include <common/ufo-math.h>
 #include "common/ufo-conebeam.h"
 #include "common/ufo-scarray.h"
 #include "common/ufo-ctlab.h"
@@ -350,12 +351,6 @@ static GParamSpec *properties[N_PROPERTIES] = { NULL, };
 DEFINE_FILL_SINCOS (cl_float)
 DEFINE_FILL_SINCOS (cl_double)
 
-static gboolean
-are_almost_equal (gdouble a, gdouble b)
-{
-    return (fabs (a - b) < 1e-7);
-}
-
 static gsize
 get_type_size (StoreType type)
 {
@@ -470,25 +465,25 @@ is_parameter_angular (Parameter parameter)
 static gboolean
 is_axis_angle_almost_zero (UfoGeneralBackprojectTaskPrivate *priv)
 {
-    return are_almost_equal (ufo_scarray_get_double (priv->lab->axis->angle->x, 0), 0) &&
-           are_almost_equal (ufo_scarray_get_double (priv->lab->axis->angle->y, 0), 0) &&
-           are_almost_equal (ufo_scarray_get_double (priv->lab->axis->angle->z, 0), 0);
+    return UFO_MATH_ARE_ALMOST_EQUAL (ufo_scarray_get_double (priv->lab->axis->angle->x, 0), 0) &&
+           UFO_MATH_ARE_ALMOST_EQUAL (ufo_scarray_get_double (priv->lab->axis->angle->y, 0), 0) &&
+           UFO_MATH_ARE_ALMOST_EQUAL (ufo_scarray_get_double (priv->lab->axis->angle->z, 0), 0);
 }
 
 static gboolean
 is_volume_angle_almost_zero (UfoGeneralBackprojectTaskPrivate *priv)
 {
-    return are_almost_equal (ufo_scarray_get_double (priv->lab->volume_angle->x, 0), 0) &&
-           are_almost_equal (ufo_scarray_get_double (priv->lab->volume_angle->y, 0), 0) &&
-           are_almost_equal (ufo_scarray_get_double (priv->lab->volume_angle->z, 0), 0);
+    return UFO_MATH_ARE_ALMOST_EQUAL (ufo_scarray_get_double (priv->lab->volume_angle->x, 0), 0) &&
+           UFO_MATH_ARE_ALMOST_EQUAL (ufo_scarray_get_double (priv->lab->volume_angle->y, 0), 0) &&
+           UFO_MATH_ARE_ALMOST_EQUAL (ufo_scarray_get_double (priv->lab->volume_angle->z, 0), 0);
 }
 
 static gboolean
 is_detector_angle_almost_zero (UfoGeneralBackprojectTaskPrivate *priv)
 {
-    return are_almost_equal (ufo_scarray_get_double (priv->lab->detector->angle->x, 0), 0) &&
-           are_almost_equal (ufo_scarray_get_double (priv->lab->detector->angle->y, 0), 0) &&
-           are_almost_equal (ufo_scarray_get_double (priv->lab->detector->angle->z, 0), 0);
+    return UFO_MATH_ARE_ALMOST_EQUAL (ufo_scarray_get_double (priv->lab->detector->angle->x, 0), 0) &&
+           UFO_MATH_ARE_ALMOST_EQUAL (ufo_scarray_get_double (priv->lab->detector->angle->y, 0), 0) &&
+           UFO_MATH_ARE_ALMOST_EQUAL (ufo_scarray_get_double (priv->lab->detector->angle->z, 0), 0);
 }
 /*}}}*/
 
@@ -1421,7 +1416,7 @@ ufo_general_backproject_task_process (UfoTask *task,
     index = priv->count % burst;
 
     if (!priv->chunks) {
-        if (are_almost_equal (ufo_scarray_get_double (priv->region, 2), 0)) {
+        if (UFO_MATH_ARE_ALMOST_EQUAL (ufo_scarray_get_double (priv->region, 2), 0)) {
             /* Conservative approach, reconstruct just one slice */
             region_start = 0.0f;
             region_stop = 1.0f;
