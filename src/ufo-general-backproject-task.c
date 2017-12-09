@@ -201,8 +201,8 @@ typedef enum {
     PARAMETER_SOURCE_POSITION_X,
     PARAMETER_SOURCE_POSITION_Y,
     PARAMETER_SOURCE_POSITION_Z,
-    PARAMETER_CENTER_X,
-    PARAMETER_CENTER_Z,
+    PARAMETER_CENTER_POSITION_X,
+    PARAMETER_CENTER_POSITION_Z,
     PARAMETER_Z
 } Parameter;
 
@@ -242,8 +242,8 @@ static const GEnumValue parameter_values[] = {
     { PARAMETER_SOURCE_POSITION_X,   "SOURCE_POSITION_X",   "source-position-x" },
     { PARAMETER_SOURCE_POSITION_Y,   "SOURCE_POSITION_Y",   "source-position-y" },
     { PARAMETER_SOURCE_POSITION_Z,   "SOURCE_POSITION_Z",   "source-position-z" },
-    { PARAMETER_CENTER_X,            "CENTER_X",            "center-x" },
-    { PARAMETER_CENTER_Z,            "CENTER_Z",            "center-z" },
+    { PARAMETER_CENTER_POSITION_X,   "CENTER_POSITION_X",   "center-position-x" },
+    { PARAMETER_CENTER_POSITION_Z,   "CENTER_POSITION_Z",   "center-position-z" },
     { PARAMETER_Z,                   "PARAMETER_Z",         "z" },
     { 0, NULL, NULL}
 };
@@ -431,11 +431,34 @@ is_detector_rotation_parameter (Parameter parameter)
 }
 
 static gboolean
+is_center_position_parameter (Parameter parameter)
+{
+    return parameter == PARAMETER_CENTER_POSITION_X ||
+           parameter == PARAMETER_CENTER_POSITION_Z;
+}
+
+static gboolean
+is_source_position_parameter (Parameter parameter)
+{
+    return parameter == PARAMETER_SOURCE_POSITION_X ||
+           parameter == PARAMETER_SOURCE_POSITION_Y ||
+           parameter == PARAMETER_SOURCE_POSITION_Z;
+}
+
+static gboolean
 is_detector_position_parameter (Parameter parameter)
 {
     return parameter == PARAMETER_DETECTOR_POSITION_X ||
            parameter == PARAMETER_DETECTOR_POSITION_Y ||
            parameter == PARAMETER_DETECTOR_POSITION_Z;
+}
+
+static gboolean
+is_parameter_positional (Parameter parameter)
+{
+    return is_center_position_parameter (parameter) ||
+           is_source_position_parameter (parameter) ||
+           is_detector_position_parameter (parameter);
 }
 
 static gboolean
@@ -486,6 +509,68 @@ replace_substring (const gchar *haystack, const gchar *needle, const gchar *repl
 /*}}}*/
 
 /*{{{ Kernel creation*/
+static gchar *
+replace_parameter_dashes (Parameter parameter)
+{
+    return replace_substring (parameter_values[parameter].value_nick, "-", "_");
+}
+
+static gchar *
+get_kernel_parameter_name (Parameter parameter)
+{
+    gchar **entries, *result, *param_kernel_name;
+    param_kernel_name = replace_parameter_dashes (parameter);
+
+    if (is_parameter_positional (parameter)) {
+        entries = g_strsplit (param_kernel_name, "_", 3);
+        if (g_strcmp0 (entries[0], param_kernel_name)) {
+            result = g_strconcat (entries[0], "_", entries[1], NULL);
+        }
+        g_strfreev (entries);
+    } else {
+        result = g_strdup (param_kernel_name);
+    }
+    g_free (param_kernel_name);
+
+    return result;
+}
+
+static gchar *
+make_template (UfoGeneralBackprojectTaskPrivate *priv, gboolean vectorized)
+{
+    gchar *template, *header, *header_1, *body, *kernel_parameter_name, *tmp;
+
+    if (!(header = ufo_resources_get_kernel_source (priv->resources, "general_bp_header.in", NULL))) {
+        g_warning ("Error obtaining general backprojection kernel header template");
+        return NULL;
+    }
+    if (!(body = ufo_resources_get_kernel_source (priv->resources, "general_bp_body.in", NULL))) {
+        g_warning ("Error obtaining general backprojection kernel body template");
+        return NULL;
+    }
+    if (vectorized) {
+        if (!priv->parameter == PARAMETER_Z) {
+            kernel_parameter_name = get_kernel_parameter_name (priv->parameter);
+            tmp = g_strconcat ("global_", kernel_parameter_name, NULL);
+            header_1 = replace_substring (header, kernel_parameter_name, tmp);
+            g_free (tmp);
+            g_free (header);
+            header = replace_substring (header_1, "%memspace%", "global ");
+            g_free (header_1);
+            g_free (kernel_parameter_name);
+        }
+    } else {
+        header_1 = replace_substring (header, "%memspace%", "");
+        g_free (header);
+        header = header_1;
+    }
+    template = g_strconcat (header, body, NULL);
+    g_free (header);
+    g_free (body);
+
+    return template;
+}
+
 /**
  * make_args:
  * @burst: (in): number of processed projections in the kernel
@@ -551,39 +636,57 @@ make_type_conversion (const gchar *compute_type, const gchar *store_type)
 }
 
 /**
+ * make_parameter_initial_assignment:
+ * @parameter: (in): parameter which represents the third reconstruction axis
+ *
+ * Make initial parameter assignment for vectorized kernels which need to first
+ * copy the global values to a private variable.
+ */
+static gchar *
+make_parameter_initial_assignment (Parameter parameter)
+{
+    gchar *code = NULL, *kernel_parameter_name;
+
+    if (parameter == PARAMETER_Z) {
+        code = g_strdup ("");
+    } else {
+        kernel_parameter_name = get_kernel_parameter_name (parameter);
+        if (is_parameter_positional (parameter)) {
+            code = g_strconcat ("cfloat3 ", kernel_parameter_name, ";\n", NULL);
+        } else if (is_parameter_angular (parameter)) {
+            code = g_strconcat ("cfloat2 ", kernel_parameter_name, ";\n", NULL);
+        }
+        g_free (kernel_parameter_name);
+    }
+
+    return code;
+}
+
+/**
  * make_parameter_assignment:
  * @parameter: (in): parameter which represents the third reconstruction axis
  *
  * Make parameter assignment.
  */
 static gchar *
-make_parameter_assignment (const gchar *parameter)
+make_parameter_assignment (Parameter parameter)
 {
-    gchar **entries;
+    gchar **entries, *param_kernel_name;
     gchar *code = NULL;
+    param_kernel_name = replace_parameter_dashes (parameter);
 
-    if (!g_strcmp0 (parameter, "z")) {
-        code = g_strdup ("voxel_0.z = region[idz].x;");
-    } else if (g_str_has_prefix (parameter, "center") ||
-               g_str_has_prefix (parameter, "detector_position") ||
-               g_str_has_prefix (parameter, "source_position")) {
-        entries = g_strsplit (parameter, "_", 3);
-        if (!g_strcmp0 (entries[0], parameter)) {
-            /* Not found */
-            code = NULL;
-        } else {
-            if (g_strv_length (entries) == 2) {
-                code = g_strconcat (entries[0], ".", entries[1], " = region[idz].x;", NULL);
-            } else {
-                code = g_strconcat (entries[0], "_", entries[1], ".", entries[2], " = region[idz].x;", NULL);
-            }
+    if (parameter == PARAMETER_Z) {
+        code = g_strdup ("\tvoxel_0.z = region[idz].x;\n");
+    } else if (is_parameter_positional (parameter)) {
+        entries = g_strsplit (param_kernel_name, "_", 3);
+        if (g_strcmp0 (entries[0], param_kernel_name)) {
+            code = g_strconcat ("\t", entries[0], "_", entries[1], ".", entries[2], " = region[idz].x;\n", NULL);
         }
         g_strfreev (entries);
-    } else if (g_str_has_prefix (parameter, "axis_angle") ||
-               g_str_has_prefix (parameter, "volume_angle") ||
-               g_str_has_prefix (parameter, "detector_angle")) {
-        code = g_strconcat (parameter, " = region[idz];", NULL);
+    } else if (is_parameter_angular (parameter)) {
+        code = g_strconcat ("\t", param_kernel_name, " = region[idz];\n", NULL);
     }
+    g_free (param_kernel_name);
 
     return code;
 }
@@ -592,23 +695,24 @@ make_parameter_assignment (const gchar *parameter)
  * make_volume_transformation:
  * @values: (in): sine and cosine angle values
  * @point: 3D point which will be rotated
+ * @suffix: suffix which comes after values
  *
  * Inplace point rotation about the three coordinate axes.
  */
 static gchar *
-make_volume_transformation (const gchar *values, const gchar *point)
+make_volume_transformation (const gchar *values, const gchar *point, const gchar *suffix)
 {
     gulong size = 512;
     gulong written;
     gchar *code = g_strnfill (size, 0);
 
     written = g_snprintf (code, size,
-                          "\t%s = rotate_z (%s_z, %s);"
-                          "\n\t%s = rotate_y (%s_y, %s);"
-                          "\n\t%s = rotate_x (%s_x, %s);\n",
-                          point, values, point,
-                          point, values, point,
-                          point, values, point);
+                          "\t%s = rotate_z (%s_z%s, %s);"
+                          "\n\t%s = rotate_y (%s_y%s, %s);"
+                          "\n\t%s = rotate_x (%s_x%s, %s);\n",
+                          point, values, suffix, point,
+                          point, values, suffix, point,
+                          point, values, suffix, point);
 
     if (written > size) {
         g_free (code);
@@ -618,9 +722,9 @@ make_volume_transformation (const gchar *values, const gchar *point)
     return code;
 }
 
-
 /**
  * make_static_transformations:
+ * @vectorized (in): geometry parameters are vectors
  * @with_volume: (in): rotate reconstructed volume
  * @perpendicular_detector: (in): is the detector perpendicular to the beam
  * @parallel_beam: (in): is the beam parallel
@@ -628,29 +732,37 @@ make_volume_transformation (const gchar *values, const gchar *point)
  * Make static transformations independent from the tomographic rotation angle.
  */
 static gchar *
-make_static_transformations (gboolean with_volume, gboolean perpendicular_detector, gboolean parallel_beam)
+make_static_transformations (gboolean vectorized, gboolean with_volume,
+                             gboolean perpendicular_detector, gboolean parallel_beam)
 {
-    gchar *code = g_strnfill (1024, 0);
+    gchar *code = g_strnfill (8192, 0);
     gchar *current = code;
-    gchar *detector_transformation, *volume_transformation;
+    gchar *detector_transformation, *volume_transformation, *tmp;
+    const gchar *voxel_0 = vectorized ? "voxel" : "voxel_0";
 
     if (!parallel_beam) {
-        current = g_stpcpy (current, "// Magnification\n\tvoxel_0 *= -native_divide(source_position.y, "
-                            "(detector_position.y - source_position.y));\n");
+        if (vectorized) {
+            current = g_stpcpy (current, "\t// Magnification\n\tvoxel = voxel_0 * -native_divide(source_position[%02d].y, "
+                                "(detector_position[%02d].y - source_position[%02d].y));\n");
+        } else {
+            current = g_stpcpy (current, "// Magnification\n\tvoxel_0 *= -native_divide(source_position[%02d].y, "
+                                "(detector_position[%02d].y - source_position[%02d].y));\n");
+        }
     }
     if (!perpendicular_detector) {
-        if ((detector_transformation = make_volume_transformation ("detector_angle", "detector_normal")) == NULL) {
+        if ((detector_transformation = make_volume_transformation ("detector_angle", "detector_normal", "[%02d]")) == NULL) {
             g_free (code);
             return NULL;
         }
+        current = g_stpcpy (current, "\tdetector_normal = (float3)(0.0, -1.0, 0.0);\n");
         current = g_stpcpy (current, detector_transformation);
-        current = g_stpcpy (current, "\n\tdetector_offset = -dot (detector_position, detector_normal);\n");
+        current = g_stpcpy (current, "\n\tdetector_offset = -dot (detector_position[%02d], detector_normal);\n");
         g_free (detector_transformation);
     } else if (!parallel_beam) {
-        current = g_stpcpy (current, "\n\tproject_tmp = detector_offset - source_position.y;\n");
+        current = g_stpcpy (current, "\n\tproject_tmp = detector_offset - source_position[%02d].y;\n");
     }
     if (with_volume) {
-        if ((volume_transformation = make_volume_transformation ("volume_angle", "voxel_0")) == NULL) {
+        if ((volume_transformation = make_volume_transformation ("volume_angle", voxel_0, "[%02d]")) == NULL) {
             g_free (code);
             return NULL;
         }
@@ -660,7 +772,13 @@ make_static_transformations (gboolean with_volume, gboolean perpendicular_detect
     if (!(perpendicular_detector || parallel_beam)) {
         current = g_stpcpy (current,
                             "\n\ttmp_transformation = "
-                            "- (detector_offset + dot (source_position, detector_normal));\n");
+                            "- (detector_offset + dot (source_position[%02d], detector_normal));\n");
+    }
+
+    if (!vectorized) {
+        tmp = replace_substring (code, "\\[%02d\\]", "");
+        g_free (code);
+        code = tmp;
     }
 
     return code;
@@ -701,6 +819,8 @@ make_projection_computation (gboolean perpendicular_detector, gboolean parallel_
 
 /**
  * make_transformations:
+ * @parameter: parameter reconstructed along the third dimension
+ * @vectorized (in): geometry parameters are vectors
  * @burst (in): number of projections processed by the kernel
  * @with_axis: (in): do computations related with rotation axis
  * @perpendicular_detector: (in): is the detector perpendicular to the the mean
@@ -712,13 +832,15 @@ make_projection_computation (gboolean perpendicular_detector, gboolean parallel_
  * geometry settings.
  */
 static gchar *
-make_transformations (gint burst, gboolean with_axis, gboolean perpendicular_detector,
-                      gboolean parallel_beam, const gchar *compute_type)
+make_transformations (Parameter parameter, gboolean vectorized, gint burst, gboolean with_volume,
+                      gboolean with_axis, gboolean perpendicular_detector, gboolean parallel_beam,
+                      const gchar *compute_type)
 {
     gint i;
-    gulong written = 0;
-    gchar *code_fmt, *code, *current, *volume_transformation;
-    const guint snippet_size = 8192;
+    size_t written = 0;
+    gchar *code_fmt, *code, *current, *volume_transformation, *pretransformation,
+          *str_iteration, *parameter_assignment, *kernel_parameter_name, *tmp, str_index[3];
+    const guint snippet_size = 16384;
     const guint size = burst * snippet_size;
     /* Based on eq. 30 from "Direct cone beam SPECT reconstruction with camera tilt" */
     const gchar *slice_coefficient =
@@ -733,13 +855,40 @@ make_transformations (gint burst, gboolean with_axis, gboolean perpendicular_det
     code_fmt = g_strnfill (snippet_size, 0);
     code = g_strnfill (size, 0);
 
-    current = g_stpcpy (code_fmt,
-                        "\t/* Tomographic rotation angle %02d */"
-                        "\n\tvoxel = rotate_z (tomo_%02d, voxel_0);\n");
+    current = g_stpcpy (code_fmt, "\t/* Tomographic rotation angle %02d */\n");
+
+    if (vectorized) {
+        if (is_parameter_positional (parameter)) {
+            /* If the parameter is positional, first load the global 3-tuple to
+             * which it belongs (e.g. if it is source_position_x we need to load the
+             * source_position) and change only the part specified by parameter.
+             * This way the two components can still be governed by the tomographic
+             * angle and the third can be optimized for. */
+            kernel_parameter_name = get_kernel_parameter_name (parameter);
+            tmp = g_strconcat ("\t", kernel_parameter_name, " = ", "global_", kernel_parameter_name, "[%02d];\n", NULL);
+            parameter_assignment = make_parameter_assignment (parameter);
+            current = g_stpcpy (current, tmp);
+            current = g_stpcpy (current, parameter_assignment);
+            g_free (parameter_assignment);
+            g_free (kernel_parameter_name);
+            g_free (tmp);
+        }
+        /* For vectorized kernel all static transformations become non-static */
+        if ((pretransformation = make_static_transformations (vectorized, with_volume, perpendicular_detector,
+                                                             parallel_beam)) == NULL) {
+            g_warning ("Error making static transformations");
+            return NULL;
+        }
+        current = g_stpcpy (current, pretransformation);
+        g_free (pretransformation);
+    }
+
+    current = g_stpcpy (current, vectorized ? "\tvoxel = rotate_z (tomo_%02d, voxel);\n" :
+                        "\tvoxel = rotate_z (tomo_%02d, voxel_0);\n");
 
     if (with_axis) {
         /* Tilted axis of rotation */
-        if ((volume_transformation = make_volume_transformation ("axis_angle", "voxel")) == NULL) {
+        if ((volume_transformation = make_volume_transformation ("axis_angle", "voxel", "")) == NULL) {
             g_free (code_fmt);
             g_free (code);
             return NULL;
@@ -771,11 +920,11 @@ make_transformations (gint burst, gboolean with_axis, gboolean perpendicular_det
     if (!g_strcmp0 (compute_type, "float")) {
         current = g_stpcpy (current,
                             "\tresult += read_imagef (projection_%02d, sampler, "
-                            "voxel.xz + center.xz).x");
+                            "voxel.xz + center_position.xz).x");
     } else {
         current = g_stpcpy (current,
                             "\tresult += read_imagef (projection_%02d, sampler, "
-                            "convert_float2(voxel.xz + center.xz)).x");
+                            "convert_float2(voxel.xz + center_position.xz)).x");
     }
 
     /* FDK normalization application */
@@ -785,13 +934,23 @@ make_transformations (gint burst, gboolean with_axis, gboolean perpendicular_det
         current = g_stpcpy (current, " * coeff * coeff;\n\n");
     }
 
+    current = code;
     for (i = 0; i < burst; i++) {
-        written += g_snprintf (code + written, snippet_size, code_fmt, i, i, i);
-        if (written > size) {
+        if (g_snprintf (str_index, 3, "%02d", i) > 3) {
             g_free (code_fmt);
             g_free (code);
             return NULL;
         }
+        str_iteration = replace_substring (code_fmt, "%02d", str_index);
+        written += strlen (str_iteration);
+        if (written > size) {
+            g_free (code_fmt);
+            g_free (code);
+            g_free (str_iteration);
+            return NULL;
+        }
+        current = g_stpcpy (current, str_iteration);
+        g_free (str_iteration);
     }
     g_free (code_fmt);
 
@@ -801,6 +960,7 @@ make_transformations (gint burst, gboolean with_axis, gboolean perpendicular_det
 /**
  * make_kernel:
  * @template (in): kernel template string
+ * @vectorized (in): geometry parameters are vectors
  * @burst (in): how many projections to process in one kernel invocation
  * @with_axis (in): rotate the rotation axis
  * @with_volume: (in): rotate reconstructed volume
@@ -815,20 +975,21 @@ make_transformations (gint burst, gboolean with_axis, gboolean perpendicular_det
  * Make backprojection kernel.
  */
 static gchar *
-make_kernel (gchar *template, gint burst, gboolean with_axis, gboolean with_volume,
+make_kernel (gchar *template, gboolean vectorized, gint burst, gboolean with_axis, gboolean with_volume,
              gboolean perpendicular_detector, gboolean parallel_beam, const gchar *compute_type,
-             const gchar *result_type, const gchar *store_type, const gchar *parameter)
+             const gchar *result_type, const gchar *store_type, Parameter parameter)
 {
     const gchar *double_pragma_def, *double_pragma, *half_pragma_def, *half_pragma,
           *image_args_fmt, *trigonomoerty_args_fmt;
-    gchar *image_args, *trigonometry_args, *type_conversion, *parameter_assignment,
+    gchar *image_args, *trigonometry_args, *type_conversion, *parameter_assignment, *local_assignment,
           *static_transformations, *transformations, *code_tmp, *code, **parts;
+    gboolean positional_param = is_parameter_positional (parameter);
 
     double_pragma_def = "#pragma OPENCL EXTENSION cl_khr_fp64 : enable\n";
     half_pragma_def = "#pragma OPENCL EXTENSION cl_khr_fp16 : enable\n\n";
     image_args_fmt = "\t\t\t read_only image2d_t projection_%02d,\n";
     trigonomoerty_args_fmt = "\t\t\t const cfloat2 tomo_%02d,\n";
-    parts = g_strsplit (template, "%tmpl%", 8);
+    parts = g_strsplit (template, "%tmpl%", 9);
 
     if ((image_args = make_args (burst, image_args_fmt)) == NULL) {
         g_warning ("Error making image arguments");
@@ -842,19 +1003,40 @@ make_kernel (gchar *template, gint burst, gboolean with_axis, gboolean with_volu
         g_warning ("Error making type conversion");
         return NULL;
     }
-    parameter_assignment = make_parameter_assignment (parameter);
-    if (parameter_assignment == NULL) {
-        g_warning ("Wrong parameter name");
-        return NULL;
+    if (vectorized) {
+        /* First make a private variable with the same name as the kernel
+         * argument name in case of scalar kernel. The buffer value will be
+         * loaded for each tomographic angle. */
+        local_assignment = make_parameter_initial_assignment (parameter);
+        if (local_assignment == NULL) {
+            g_warning ("Wrong parameter name");
+            return NULL;
+        }
+        if (positional_param) {
+            /* In case of positional parameter two components can still be
+             * controlled by the tomographic angle and one can be the actual
+             * parameter specified by region, thus the variable needs to be set
+             * for every tomographic angle separately */
+            parameter_assignment = g_strdup ("");
+        }
+    }
+    if (!vectorized || (vectorized && !positional_param)) {
+        parameter_assignment = make_parameter_assignment (parameter);
+        if (parameter_assignment == NULL) {
+            g_warning ("Wrong parameter name");
+            return NULL;
+        }
     }
 
-    if ((static_transformations = make_static_transformations(with_volume, perpendicular_detector,
-                                                              parallel_beam)) == NULL) {
-        g_warning ("Error making static transformations");
-        return NULL;
+    if (!vectorized) {
+        if ((static_transformations = make_static_transformations(FALSE, with_volume, perpendicular_detector,
+                                                                  parallel_beam)) == NULL) {
+            g_warning ("Error making static transformations");
+            return NULL;
+        }
     }
-    if ((transformations = make_transformations (burst, with_axis, perpendicular_detector,
-                                            parallel_beam, compute_type)) == NULL) {
+    if ((transformations = make_transformations (parameter, vectorized, burst, with_volume, with_axis,
+                                                 perpendicular_detector, parallel_beam, compute_type)) == NULL) {
         g_warning ("Error making tomographic-angle-based transformations");
         return NULL;
     }
@@ -868,14 +1050,16 @@ make_kernel (gchar *template, gint burst, gboolean with_axis, gboolean with_volu
     } else {
         half_pragma = "";
     }
-    code_tmp = g_strconcat (double_pragma, half_pragma, parts[0], image_args,
-                                 parts[1], trigonometry_args,
-                                 parts[2], parameter_assignment,
-                                 parts[3], static_transformations,
-                                 parts[4], transformations,
-                                 parts[5], type_conversion,
-                                 parts[6], type_conversion,
-                                 parts[7], NULL);
+    code_tmp = g_strconcat (double_pragma, half_pragma,
+                            parts[0], image_args,
+                            parts[1], trigonometry_args,
+                            parts[2], vectorized ? local_assignment : "",
+                            parts[3], parameter_assignment,
+                            parts[4], vectorized ? "" : static_transformations,
+                            parts[5], transformations,
+                            parts[6], type_conversion,
+                            parts[7], type_conversion,
+                            parts[8], NULL);
     code = replace_substring (code_tmp, "cfloat", compute_type);
     g_free (code_tmp);
     code_tmp = replace_substring (code, "rtype", result_type);
@@ -886,7 +1070,11 @@ make_kernel (gchar *template, gint burst, gboolean with_axis, gboolean with_volu
     g_free (trigonometry_args);
     g_free (type_conversion);
     g_free (parameter_assignment);
-    g_free (static_transformations);
+    if (vectorized) {
+        g_free (local_assignment);
+    } else {
+        g_free (static_transformations);
+    }
     g_free (transformations);
     g_free (code_tmp);
     g_strfreev (parts);
@@ -959,8 +1147,8 @@ node_setup (UfoGeneralBackprojectTaskPrivate *priv,
                         UfoGpuNode *node)
 {
     guint i;
-    gboolean with_axis, with_volume, parallel_beam, perpendicular_detector;
-    gchar *template, *kernel_code, *parameter_for_code;
+    gboolean with_axis, with_volume, parallel_beam, perpendicular_detector, vectorized;
+    gchar *template, *kernel_code;
     const gchar *node_name;
     GValue *node_name_gvalue;
     const gchar compiler_options_tmpl[] = "-cl-nv-maxrregcount=%u";
@@ -997,93 +1185,81 @@ node_setup (UfoGeneralBackprojectTaskPrivate *priv,
     perpendicular_detector = !is_detector_rotation_parameter (priv->parameter) &&
                              !is_detector_position_parameter (priv->parameter) &&
                              is_detector_angle_almost_zero (priv);
-
     parallel_beam = TRUE;
-
     /* Actual parameter setup */
     for (i = 0; i < priv->num_projections; i++) {
         parallel_beam = parallel_beam && isinf (ufo_scarray_get_double (priv->source_position_y, i));
     }
+    vectorized = (ufo_scarray_has_n_values (priv->axis_angle_x, priv->num_projections) ||
+                  ufo_scarray_has_n_values (priv->axis_angle_y, priv->num_projections) ||
+                  ufo_scarray_has_n_values (priv->axis_angle_z, priv->num_projections) ||
+                  ufo_scarray_has_n_values (priv->volume_angle_x, priv->num_projections) ||
+                  ufo_scarray_has_n_values (priv->volume_angle_y, priv->num_projections) ||
+                  ufo_scarray_has_n_values (priv->volume_angle_z, priv->num_projections) ||
+                  ufo_scarray_has_n_values (priv->detector_angle_x, priv->num_projections) ||
+                  ufo_scarray_has_n_values (priv->detector_angle_y, priv->num_projections) ||
+                  ufo_scarray_has_n_values (priv->detector_angle_z, priv->num_projections) ||
+                  ufo_scarray_has_n_values (priv->detector_position_x, priv->num_projections) ||
+                  ufo_scarray_has_n_values (priv->detector_position_y, priv->num_projections) ||
+                  ufo_scarray_has_n_values (priv->detector_position_z, priv->num_projections) ||
+                  ufo_scarray_has_n_values (priv->source_position_x, priv->num_projections) ||
+                  ufo_scarray_has_n_values (priv->source_position_y, priv->num_projections) ||
+                  ufo_scarray_has_n_values (priv->source_position_z, priv->num_projections) ||
+                  ufo_scarray_has_n_values (priv->center_x, priv->num_projections) ||
+                  ufo_scarray_has_n_values (priv->center_z, priv->num_projections));
 
-    g_log ("gbp", G_LOG_LEVEL_DEBUG, "burst: %d, parameter: %s with axis: %d, with volume: %d, "
+    g_log ("gbp", G_LOG_LEVEL_DEBUG, "vectorized: %d, parameter: %s with axis: %d, with volume: %d, "
            "perpendicular detector: %d, parallel beam: %d, "
            "compute type: %s, result type: %s, store type: %s",
-             priv->burst, parameter_values[priv->parameter].value_nick, with_axis, with_volume,
+             vectorized, parameter_values[priv->parameter].value_nick, with_axis, with_volume,
              perpendicular_detector, parallel_beam,
              compute_type_values[priv->compute_type].value_nick,
              ft_values[priv->result_type].value_nick,
              st_values[priv->store_type].value_nick);
 
-    if (ufo_scarray_has_n_values (priv->axis_angle_x, priv->num_projections) ||
-        ufo_scarray_has_n_values (priv->axis_angle_y, priv->num_projections) ||
-        ufo_scarray_has_n_values (priv->axis_angle_z, priv->num_projections) ||
-        ufo_scarray_has_n_values (priv->volume_angle_x, priv->num_projections) ||
-        ufo_scarray_has_n_values (priv->volume_angle_y, priv->num_projections) ||
-        ufo_scarray_has_n_values (priv->volume_angle_z, priv->num_projections) ||
-        ufo_scarray_has_n_values (priv->detector_angle_x, priv->num_projections) ||
-        ufo_scarray_has_n_values (priv->detector_angle_y, priv->num_projections) ||
-        ufo_scarray_has_n_values (priv->detector_angle_z, priv->num_projections) ||
-        ufo_scarray_has_n_values (priv->detector_position_x, priv->num_projections) ||
-        ufo_scarray_has_n_values (priv->detector_position_y, priv->num_projections) ||
-        ufo_scarray_has_n_values (priv->detector_position_z, priv->num_projections) ||
-        ufo_scarray_has_n_values (priv->source_position_x, priv->num_projections) ||
-        ufo_scarray_has_n_values (priv->source_position_y, priv->num_projections) ||
-        ufo_scarray_has_n_values (priv->source_position_z, priv->num_projections) ||
-        ufo_scarray_has_n_values (priv->center_x, priv->num_projections) ||
-        ufo_scarray_has_n_values (priv->center_z, priv->num_projections)) {
-        g_log ("gbp", G_LOG_LEVEL_DEBUG, "Using vectorized parameters kernel");
-        g_warning ("Vectorized parameters are not yet implemented");
-    } else {
-        g_log ("gbp", G_LOG_LEVEL_DEBUG, "Using scalar-based parameters kernel");
-        /* Create kernel source code based on geometry settings */
-        if (!(template = ufo_resources_get_kernel_source (priv->resources, "general_backproject.in", NULL))) {
-            g_warning ("Error obtaining general backprojection kernel template");
-            return;
-        }
+    if ((template = make_template (priv, vectorized)) == NULL) {
+        return;
+    }
 
-        parameter_for_code = replace_substring (parameter_values[priv->parameter].value_nick, "-", "_");
-        kernel_code = make_kernel (template, priv->burst, with_axis, with_volume,
+    /* Create kernel source code based on geometry settings */
+    kernel_code = make_kernel (template, vectorized, priv->burst, with_axis, with_volume,
+                               perpendicular_detector, parallel_beam,
+                               compute_type_values[priv->compute_type].value_nick,
+                               ft_values[priv->result_type].value_nick,
+                               st_values[priv->store_type].value_nick,
+                               priv->parameter);
+    if (!kernel_code) {
+        return;
+    }
+    priv->kernel = ufo_resources_get_kernel_from_source_with_opts (priv->resources,
+                                                                   kernel_code,
+                                                                   "backproject",
+                                                                   compiler_options,
+                                                                   NULL);
+    g_free (kernel_code);
+
+    if (priv->num_projections % priv->burst) {
+        kernel_code = make_kernel (template, vectorized, priv->num_projections % priv->burst,
+                                   with_axis, with_volume,
                                    perpendicular_detector, parallel_beam,
                                    compute_type_values[priv->compute_type].value_nick,
                                    ft_values[priv->result_type].value_nick,
                                    st_values[priv->store_type].value_nick,
-                                   parameter_for_code);
+                                   priv->parameter);
         if (!kernel_code) {
-            g_free (parameter_for_code);
             return;
         }
-        priv->kernel = ufo_resources_get_kernel_from_source_with_opts (priv->resources,
-                                                                       kernel_code,
-                                                                       "backproject",
-                                                                       compiler_options,
-                                                                       NULL);
+
+        /* If num_projections % priv->burst != 0 we need one more kernel to process the remaining projections */
+        priv->rest_kernel = ufo_resources_get_kernel_from_source_with_opts (priv->resources,
+                                                                            kernel_code,
+                                                                            "backproject",
+                                                                            compiler_options,
+                                                                            NULL);
+        /* g_printf ("%s", kernel_code); */
         g_free (kernel_code);
-
-        if (priv->num_projections % priv->burst) {
-            kernel_code = make_kernel (template, priv->num_projections % priv->burst,
-                                       with_axis, with_volume,
-                                       perpendicular_detector, parallel_beam,
-                                       compute_type_values[priv->compute_type].value_nick,
-                                       ft_values[priv->result_type].value_nick,
-                                       st_values[priv->store_type].value_nick,
-                                       parameter_for_code);
-            if (!kernel_code) {
-                g_free (parameter_for_code);
-                return;
-            }
-
-            /* If num_projections % priv->burst != 0 we need one more kernel to process the remaining projections */
-            priv->rest_kernel = ufo_resources_get_kernel_from_source_with_opts (priv->resources,
-                                                                                kernel_code,
-                                                                                "backproject",
-                                                                                compiler_options,
-                                                                                NULL);
-            /* g_printf ("%s", kernel_code); */
-            g_free (kernel_code);
-        }
-        g_free (template);
-        g_free (parameter_for_code);
     }
+    g_free (template);
 
     if (priv->kernel) {
         UFO_RESOURCES_CHECK_CLERR (clRetainKernel (priv->kernel));
