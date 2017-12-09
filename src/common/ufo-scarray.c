@@ -53,6 +53,15 @@ ufo_scarray_new (guint num_elements, GType type, GValue *init_value)
     return scarray;
 }
 
+UfoScarray *
+ufo_scarray_copy (const UfoScarray *array)
+{
+    UfoScarray *cpy = g_new0 (UfoScarray, 1);
+    cpy->array = g_value_array_copy (array->array);
+
+    return cpy;
+}
+
 void
 ufo_scarray_free (UfoScarray *scarray)
 {

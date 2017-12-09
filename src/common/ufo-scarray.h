@@ -27,6 +27,7 @@ typedef struct _UfoScarray UfoScarray;
 UfoScarray *ufo_scarray_new             (guint           num_elements,
                                          GType           type,
                                          GValue         *init_value);
+UfoScarray *ufo_scarray_copy            (const UfoScarray *scarray);
 void        ufo_scarray_free            (UfoScarray     *scarray);
 void        ufo_scarray_set_value       (UfoScarray     *scarray,
                                          GValue         *value);
