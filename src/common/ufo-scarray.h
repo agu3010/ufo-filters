@@ -41,5 +41,6 @@ gdouble     ufo_scarray_get_double      (UfoScarray     *scarray,
                                          guint           index);
 gboolean    ufo_scarray_has_n_values    (UfoScarray     *scarray,
                                          guint           num);
+gboolean    ufo_scarray_is_almost_zero  (UfoScarray     *scarray);
 
 #endif

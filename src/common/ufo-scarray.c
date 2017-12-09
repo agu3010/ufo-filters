@@ -17,6 +17,7 @@
  * License along with this library.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include "ufo-math.h"
 #include "ufo-scarray.h"
 
 struct _UfoScarray {
@@ -122,4 +123,18 @@ ufo_scarray_has_n_values (UfoScarray *scarray,
                           guint num)
 {
     return scarray->array->n_values == num;
+}
+
+gboolean
+ufo_scarray_is_almost_zero (UfoScarray *scarray)
+{
+    guint i;
+
+    for (i = 0; i < scarray->array->n_values; i++) {
+        if (!UFO_MATH_ARE_ALMOST_EQUAL (ufo_scarray_get_double (scarray, i), 0)) {
+            return FALSE;
+        }
+    }
+
+    return TRUE;
 }
