@@ -461,30 +461,6 @@ is_parameter_angular (Parameter parameter)
            is_volume_parameter (parameter) ||
            is_detector_position_parameter (parameter);
 }
-
-static gboolean
-is_axis_angle_almost_zero (UfoGeneralBackprojectTaskPrivate *priv)
-{
-    return UFO_MATH_ARE_ALMOST_EQUAL (ufo_scarray_get_double (priv->lab->axis->angle->x, 0), 0) &&
-           UFO_MATH_ARE_ALMOST_EQUAL (ufo_scarray_get_double (priv->lab->axis->angle->y, 0), 0) &&
-           UFO_MATH_ARE_ALMOST_EQUAL (ufo_scarray_get_double (priv->lab->axis->angle->z, 0), 0);
-}
-
-static gboolean
-is_volume_angle_almost_zero (UfoGeneralBackprojectTaskPrivate *priv)
-{
-    return UFO_MATH_ARE_ALMOST_EQUAL (ufo_scarray_get_double (priv->lab->volume_angle->x, 0), 0) &&
-           UFO_MATH_ARE_ALMOST_EQUAL (ufo_scarray_get_double (priv->lab->volume_angle->y, 0), 0) &&
-           UFO_MATH_ARE_ALMOST_EQUAL (ufo_scarray_get_double (priv->lab->volume_angle->z, 0), 0);
-}
-
-static gboolean
-is_detector_angle_almost_zero (UfoGeneralBackprojectTaskPrivate *priv)
-{
-    return UFO_MATH_ARE_ALMOST_EQUAL (ufo_scarray_get_double (priv->lab->detector->angle->x, 0), 0) &&
-           UFO_MATH_ARE_ALMOST_EQUAL (ufo_scarray_get_double (priv->lab->detector->angle->y, 0), 0) &&
-           UFO_MATH_ARE_ALMOST_EQUAL (ufo_scarray_get_double (priv->lab->detector->angle->z, 0), 0);
-}
 /*}}}*/
 
 /*{{{ String Helper functions*/
@@ -1173,11 +1149,11 @@ node_setup (UfoGeneralBackprojectTaskPrivate *priv,
 
     /* Initialization */
     /* Assume the most efficient geometry, change if necessary */
-    with_axis = is_axis_parameter (priv->parameter) || !is_axis_angle_almost_zero (priv);
-    with_volume = is_volume_parameter (priv->parameter) || !is_volume_angle_almost_zero (priv);
+    with_axis = is_axis_parameter (priv->parameter) || !ufo_point_are_almost_zero (priv->lab->axis->angle);
+    with_volume = is_volume_parameter (priv->parameter) || !ufo_point_are_almost_zero (priv->lab->volume_angle);
     perpendicular_detector = !is_detector_rotation_parameter (priv->parameter) &&
                              !is_detector_position_parameter (priv->parameter) &&
-                             is_detector_angle_almost_zero (priv);
+                             ufo_point_are_almost_zero (priv->lab->detector->angle);
     parallel_beam = TRUE;
     /* Actual parameter setup */
     for (i = 0; i < priv->num_projections; i++) {
