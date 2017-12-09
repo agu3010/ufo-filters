@@ -46,6 +46,7 @@ UfoPoint     *ufo_point_new             (UfoScarray *x,
                                          UfoScarray *z);
 UfoPoint     *ufo_point_copy            (const UfoPoint *point);
 void          ufo_point_free            (UfoPoint *point);
+gboolean      ufo_point_are_almost_zero (UfoPoint *point);
 UfoVector    *ufo_vector_new            (UfoPoint *position,
                                          UfoPoint *angle);
 void          ufo_vector_free           (UfoVector *vector);

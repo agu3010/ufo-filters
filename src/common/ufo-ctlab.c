@@ -48,6 +48,14 @@ ufo_point_free (UfoPoint *point)
     g_free (point);
 }
 
+gboolean
+ufo_point_are_almost_zero (UfoPoint *point)
+{
+    return ufo_scarray_is_almost_zero (point->x) &&
+           ufo_scarray_is_almost_zero (point->y) &&
+           ufo_scarray_is_almost_zero (point->z);
+}
+
 UfoVector *
 ufo_vector_new (UfoPoint *position, UfoPoint *angle)
 {
