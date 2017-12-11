@@ -285,6 +285,7 @@ struct _UfoGeneralBackprojectTaskPrivate {
     Parameter parameter;
     gdouble gray_map_min, gray_map_max;
     /* Private */
+    gboolean vectorized;
     guint count, generated;
     UfoResources *resources;
     cl_mem *projections;
@@ -505,7 +506,7 @@ get_kernel_parameter_name (Parameter parameter)
 }
 
 static gchar *
-make_template (UfoGeneralBackprojectTaskPrivate *priv, gboolean vectorized)
+make_template (UfoGeneralBackprojectTaskPrivate *priv)
 {
     gchar *template, *header, *header_1, *body, *kernel_parameter_name, *tmp;
 
@@ -517,7 +518,7 @@ make_template (UfoGeneralBackprojectTaskPrivate *priv, gboolean vectorized)
         g_warning ("Error obtaining general backprojection kernel body template");
         return NULL;
     }
-    if (vectorized) {
+    if (priv->vectorized) {
         if (!priv->parameter == PARAMETER_Z) {
             kernel_parameter_name = get_kernel_parameter_name (priv->parameter);
             tmp = g_strconcat ("global_", kernel_parameter_name, NULL);
@@ -1116,7 +1117,7 @@ node_setup (UfoGeneralBackprojectTaskPrivate *priv,
                         UfoGpuNode *node)
 {
     guint i;
-    gboolean with_axis, with_volume, parallel_beam, perpendicular_detector, vectorized;
+    gboolean with_axis, with_volume, parallel_beam, perpendicular_detector;
     gchar *template, *kernel_code;
     const gchar *node_name;
     GValue *node_name_gvalue;
@@ -1159,39 +1160,39 @@ node_setup (UfoGeneralBackprojectTaskPrivate *priv,
     for (i = 0; i < priv->num_projections; i++) {
         parallel_beam = parallel_beam && isinf (ufo_scarray_get_double (priv->lab->source_position->y, i));
     }
-    vectorized = (ufo_scarray_has_n_values (priv->lab->axis->angle->x, priv->num_projections) ||
-                  ufo_scarray_has_n_values (priv->lab->axis->angle->y, priv->num_projections) ||
-                  ufo_scarray_has_n_values (priv->lab->axis->angle->z, priv->num_projections) ||
-                  ufo_scarray_has_n_values (priv->lab->volume_angle->x, priv->num_projections) ||
-                  ufo_scarray_has_n_values (priv->lab->volume_angle->y, priv->num_projections) ||
-                  ufo_scarray_has_n_values (priv->lab->volume_angle->z, priv->num_projections) ||
-                  ufo_scarray_has_n_values (priv->lab->detector->angle->x, priv->num_projections) ||
-                  ufo_scarray_has_n_values (priv->lab->detector->angle->y, priv->num_projections) ||
-                  ufo_scarray_has_n_values (priv->lab->detector->angle->z, priv->num_projections) ||
-                  ufo_scarray_has_n_values (priv->lab->detector->position->x, priv->num_projections) ||
-                  ufo_scarray_has_n_values (priv->lab->detector->position->y, priv->num_projections) ||
-                  ufo_scarray_has_n_values (priv->lab->detector->position->z, priv->num_projections) ||
-                  ufo_scarray_has_n_values (priv->lab->source_position->x, priv->num_projections) ||
-                  ufo_scarray_has_n_values (priv->lab->source_position->y, priv->num_projections) ||
-                  ufo_scarray_has_n_values (priv->lab->source_position->z, priv->num_projections) ||
-                  ufo_scarray_has_n_values (priv->lab->axis->position->x, priv->num_projections) ||
-                  ufo_scarray_has_n_values (priv->lab->axis->position->z, priv->num_projections));
+    priv->vectorized = (ufo_scarray_has_n_values (priv->lab->axis->angle->x, priv->num_projections) ||
+                        ufo_scarray_has_n_values (priv->lab->axis->angle->y, priv->num_projections) ||
+                        ufo_scarray_has_n_values (priv->lab->axis->angle->z, priv->num_projections) ||
+                        ufo_scarray_has_n_values (priv->lab->volume_angle->x, priv->num_projections) ||
+                        ufo_scarray_has_n_values (priv->lab->volume_angle->y, priv->num_projections) ||
+                        ufo_scarray_has_n_values (priv->lab->volume_angle->z, priv->num_projections) ||
+                        ufo_scarray_has_n_values (priv->lab->detector->angle->x, priv->num_projections) ||
+                        ufo_scarray_has_n_values (priv->lab->detector->angle->y, priv->num_projections) ||
+                        ufo_scarray_has_n_values (priv->lab->detector->angle->z, priv->num_projections) ||
+                        ufo_scarray_has_n_values (priv->lab->detector->position->x, priv->num_projections) ||
+                        ufo_scarray_has_n_values (priv->lab->detector->position->y, priv->num_projections) ||
+                        ufo_scarray_has_n_values (priv->lab->detector->position->z, priv->num_projections) ||
+                        ufo_scarray_has_n_values (priv->lab->source_position->x, priv->num_projections) ||
+                        ufo_scarray_has_n_values (priv->lab->source_position->y, priv->num_projections) ||
+                        ufo_scarray_has_n_values (priv->lab->source_position->z, priv->num_projections) ||
+                        ufo_scarray_has_n_values (priv->lab->axis->position->x, priv->num_projections) ||
+                        ufo_scarray_has_n_values (priv->lab->axis->position->z, priv->num_projections));
 
     g_log ("gbp", G_LOG_LEVEL_DEBUG, "vectorized: %d, parameter: %s with axis: %d, with volume: %d, "
            "perpendicular detector: %d, parallel beam: %d, "
            "compute type: %s, result type: %s, store type: %s",
-             vectorized, parameter_values[priv->parameter].value_nick, with_axis, with_volume,
+             priv->vectorized, parameter_values[priv->parameter].value_nick, with_axis, with_volume,
              perpendicular_detector, parallel_beam,
              compute_type_values[priv->compute_type].value_nick,
              ft_values[priv->result_type].value_nick,
              st_values[priv->store_type].value_nick);
 
-    if ((template = make_template (priv, vectorized)) == NULL) {
+    if ((template = make_template (priv)) == NULL) {
         return;
     }
 
     /* Create kernel source code based on geometry settings */
-    kernel_code = make_kernel (template, vectorized, priv->burst, with_axis, with_volume,
+    kernel_code = make_kernel (template, priv->vectorized, priv->burst, with_axis, with_volume,
                                perpendicular_detector, parallel_beam,
                                compute_type_values[priv->compute_type].value_nick,
                                ft_values[priv->result_type].value_nick,
@@ -1208,7 +1209,7 @@ node_setup (UfoGeneralBackprojectTaskPrivate *priv,
     g_free (kernel_code);
 
     if (priv->num_projections % priv->burst) {
-        kernel_code = make_kernel (template, vectorized, priv->num_projections % priv->burst,
+        kernel_code = make_kernel (template, priv->vectorized, priv->num_projections % priv->burst,
                                    with_axis, with_volume,
                                    perpendicular_detector, parallel_beam,
                                    compute_type_values[priv->compute_type].value_nick,
@@ -2129,6 +2130,7 @@ ufo_general_backproject_task_init(UfoGeneralBackprojectTask *self)
     self->priv->lab = ufo_ctlab_new ();
 
     /* Private */
+    self->priv->vectorized = FALSE;
     self->priv->num_slices = 0;
     self->priv->num_slices_per_chunk = 0;
     self->priv->count = 0;
