@@ -639,7 +639,7 @@ make_template (UfoGeneralBackprojectTaskPrivate *priv)
             g_warning ("Error obtaining general backprojection kernel header template");
             return NULL;
         }
-        if (!priv->parameter == PARAMETER_Z) {
+        if (priv->parameter != PARAMETER_Z) {
             kernel_parameter_name = get_kernel_parameter_name (priv->parameter);
             tmp = g_strconcat ("global_", kernel_parameter_name, NULL);
             header_1 = replace_substring (header, kernel_parameter_name, tmp);
