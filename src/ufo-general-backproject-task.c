@@ -37,6 +37,7 @@
 #include "common/ufo-addressing.h"
 #include "ufo-general-backproject-task.h"
 
+#define NUM_VECTOR_ARGUMENTS 12
 #define REAL_SIZE_ARG_INDEX 1
 #define STATIC_ARG_OFFSET 19
 #define G_LOG_LEVEL_DOMAIN "gbp"
@@ -93,15 +94,168 @@ create_regions_##type (UfoGeneralBackprojectTaskPrivate *priv,                  
     g_free (region_values);                                                           \
 }
 
+#define DEFINE_TRANSFER_ANGULAR_ARGUMENT(type)                                          \
+static cl_mem                                                                           \
+transfer_angular_argument_##type (UfoGeneralBackprojectTaskPrivate *priv,               \
+                                  UfoScarray *source)                                   \
+{                                                                                       \
+    gsize size;                                                                         \
+    guint i;                                                                            \
+    cl_mem device_array;                                                                \
+    type *host_array;                                                                   \
+                                                                                        \
+    size = 2 * priv->num_projections * sizeof (type);                                   \
+    if (!(host_array = (type *) g_malloc (size))) {                                     \
+        g_warning ("Error allocating vectorized parameter host memory");                \
+        return NULL;                                                                    \
+    }                                                                                   \
+                                                                                        \
+    for (i = 0; i < priv->num_projections; i++) {                                       \
+        fill_sincos_##type (host_array + 2 * i, ufo_scarray_get_double (source, i));    \
+    }                                                                                   \
+                                                                                        \
+    device_array = transfer_host_to_device (priv->context, host_array, size);           \
+    g_free (host_array);                                                                \
+                                                                                        \
+    return device_array;                                                                \
+}                                                                                       \
+
+#define DEFINE_TRANSFER_POSITINAL_ARGUMENT(type)                                \
+static cl_mem                                                                   \
+transfer_positional_argument_##type (UfoGeneralBackprojectTaskPrivate *priv,    \
+                                     UfoPoint *source)                          \
+{                                                                               \
+    gsize size;                                                                 \
+    guint i;                                                                    \
+    type *host_array;                                                           \
+    cl_mem device_array;                                                        \
+                                                                                \
+    size = 4 * priv->num_projections * sizeof (type);                           \
+    if (!(host_array = (type *) g_malloc (size))) {                             \
+        g_warning ("Error allocating vectorized parameter host memory");        \
+        return NULL;                                                            \
+    }                                                                           \
+                                                                                \
+    for (i = 0; i < priv->num_projections; i++) {                               \
+        host_array[2 * i] = (type) ufo_scarray_get_double (source->x, i);       \
+        host_array[2 * i + 1] = (type) ufo_scarray_get_double (source->y, i);   \
+        host_array[2 * i + 2] = (type) ufo_scarray_get_double (source->z, i);   \
+    }                                                                           \
+                                                                                \
+    device_array = transfer_host_to_device (priv->context, host_array, size);   \
+    g_free (host_array);                                                        \
+                                                                                \
+    return device_array;                                                        \
+}
+
+#define DEFINE_SET_ANGULAR_VECTOR_KERNEL_ARGUMENT(type)                                                                     \
+static void                                                                                                                 \
+set_angular_vector_kernel_argument_##type (UfoGeneralBackprojectTaskPrivate *priv,                                          \
+                                           cl_kernel kernel,                                                                \
+                                           UfoPoint *point,                                                                 \
+                                           gint mem_index,                                                                  \
+                                           gint arg_index)                                                                  \
+{                                                                                                                           \
+    priv->vector_arguments[mem_index] = transfer_angular_argument_##type (priv, point->x);                                  \
+    UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (kernel, arg_index++, sizeof (cl_mem), &priv->vector_arguments[mem_index++]));\
+    priv->vector_arguments[mem_index] = transfer_angular_argument_##type (priv, point->y);                                  \
+    UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (kernel, arg_index++, sizeof (cl_mem), &priv->vector_arguments[mem_index++]));\
+    priv->vector_arguments[mem_index] = transfer_angular_argument_##type (priv, point->z);                                  \
+    UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (kernel, arg_index, sizeof (cl_mem), &priv->vector_arguments[mem_index]));    \
+}
+
+#define DEFINE_SET_STATIC_VECTOR_ARGUMENTS(type)                                                                            \
+static gint                                                                                                                 \
+set_static_vector_arguments_##type (UfoGeneralBackprojectTaskPrivate *priv,                                                 \
+                                    cl_kernel kernel,                                                                       \
+                                    gint arg_index)                                                                         \
+{                                                                                                                           \
+    gint mem_index;                                                                                                         \
+                                                                                                                            \
+    priv->vector_arguments = (cl_mem *) g_malloc (NUM_VECTOR_ARGUMENTS * sizeof (cl_mem));                                  \
+                                                                                                                            \
+    set_angular_vector_kernel_argument_##type (priv, kernel, priv->lab->axis->angle, 0, arg_index);                         \
+    set_angular_vector_kernel_argument_##type (priv, kernel, priv->lab->volume_angle, 3, arg_index + 3);                    \
+    set_angular_vector_kernel_argument_##type (priv, kernel, priv->lab->detector->angle, 6, arg_index + 6);                 \
+    mem_index = 9;                                                                                                          \
+    arg_index += 9;                                                                                                         \
+    priv->vector_arguments[mem_index] = transfer_positional_argument_##type (priv, priv->lab->axis->position);              \
+    UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (kernel, arg_index++, sizeof (cl_mem), &priv->vector_arguments[mem_index++]));\
+    priv->vector_arguments[mem_index] = transfer_positional_argument_##type (priv, priv->lab->source_position);             \
+    UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (kernel, arg_index++, sizeof (cl_mem), &priv->vector_arguments[mem_index++]));\
+    priv->vector_arguments[mem_index] = transfer_positional_argument_##type (priv, priv->lab->detector->position);          \
+    UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (kernel, arg_index++, sizeof (cl_mem), &priv->vector_arguments[mem_index++]));\
+                                                                                                                            \
+    return arg_index;                                                                                                       \
+}
+
+#define DEFINE_SET_STATIC_SCALAR_ARGUMENTS(type)                                                                            \
+static gint                                                                                                                 \
+set_static_scalar_arguments_##type (UfoGeneralBackprojectTaskPrivate *priv,                                                 \
+                                    cl_kernel kernel,                                                                       \
+                                    gint arg_index)                                                                         \
+{                                                                                                                           \
+    type axis_angle_x[2], axis_angle_y[2], axis_angle_z[2], volume_angle_x[2], volume_angle_y[2], volume_angle_z[2],        \
+         detector_angle_x[2], detector_angle_y[2], detector_angle_z[2], center_position[4], source_position[4],             \
+         detector_position[4];                                                                                              \
+                                                                                                                            \
+    fill_sincos_##type (axis_angle_x, ufo_scarray_get_double (priv->lab->axis->angle->x, priv->count));                           \
+    fill_sincos_##type (axis_angle_y, ufo_scarray_get_double (priv->lab->axis->angle->y, priv->count));                           \
+    fill_sincos_##type (axis_angle_z, ufo_scarray_get_double (priv->lab->axis->angle->z, priv->count));                           \
+    fill_sincos_##type (volume_angle_x, ufo_scarray_get_double (priv->lab->volume_angle->x, priv->count));                        \
+    fill_sincos_##type (volume_angle_y, ufo_scarray_get_double (priv->lab->volume_angle->y, priv->count));                        \
+    fill_sincos_##type (volume_angle_z, ufo_scarray_get_double (priv->lab->volume_angle->z, priv->count));                        \
+    fill_sincos_##type (detector_angle_x, ufo_scarray_get_double (priv->lab->detector->angle->x, priv->count));                   \
+    fill_sincos_##type (detector_angle_y, ufo_scarray_get_double (priv->lab->detector->angle->y, priv->count));                   \
+    fill_sincos_##type (detector_angle_z, ufo_scarray_get_double (priv->lab->detector->angle->z, priv->count));                   \
+    center_position[0] = (type) ufo_scarray_get_double (priv->lab->axis->position->x, priv->count);                         \
+    center_position[2] = (type) ufo_scarray_get_double (priv->lab->axis->position->z, priv->count);                         \
+    /* TODO: use only 2D center in the kernel */                                                                            \
+    center_position[1] = 0.0f;                                                                                              \
+    source_position[0] = (type) ufo_scarray_get_double (priv->lab->source_position->x, priv->count);                        \
+    source_position[1] = (type) ufo_scarray_get_double (priv->lab->source_position->y, priv->count);                        \
+    source_position[2] = (type) ufo_scarray_get_double (priv->lab->source_position->z, priv->count);                        \
+    detector_position[0] = (type) ufo_scarray_get_double (priv->lab->detector->position->x, priv->count);                   \
+    detector_position[1] = (type) ufo_scarray_get_double (priv->lab->detector->position->y, priv->count);                   \
+    detector_position[2] = (type) ufo_scarray_get_double (priv->lab->detector->position->z, priv->count);                   \
+                                                                                                                            \
+    UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (kernel, arg_index++, sizeof (type##2), axis_angle_x));                       \
+    UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (kernel, arg_index++, sizeof (type##2), axis_angle_y));                       \
+    UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (kernel, arg_index++, sizeof (type##2), axis_angle_z));                       \
+    UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (kernel, arg_index++, sizeof (type##2), volume_angle_x));                     \
+    UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (kernel, arg_index++, sizeof (type##2), volume_angle_y));                     \
+    UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (kernel, arg_index++, sizeof (type##2), volume_angle_z));                     \
+    UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (kernel, arg_index++, sizeof (type##2), detector_angle_x));                   \
+    UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (kernel, arg_index++, sizeof (type##2), detector_angle_y));                   \
+    UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (kernel, arg_index++, sizeof (type##2), detector_angle_z));                   \
+    UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (kernel, arg_index++, sizeof (type##3), center_position));                    \
+    UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (kernel, arg_index++, sizeof (type##3), source_position));                    \
+    UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (kernel, arg_index++, sizeof (type##3), detector_position));                  \
+                                                                                                                            \
+    g_log ("gbp", G_LOG_LEVEL_DEBUG, "axis: %g %g, %g %g, %g %g",                                                           \
+           axis_angle_x[0], axis_angle_x[1], axis_angle_y[0], axis_angle_y[1], axis_angle_z[0], axis_angle_z[1]);           \
+    g_log ("gbp", G_LOG_LEVEL_DEBUG, "volume: %g %g, %g %g, %g %g",                                                         \
+           volume_angle_x[0], volume_angle_x[1], volume_angle_y[0], volume_angle_y[1], volume_angle_z[0],                   \
+           volume_angle_z[1]);                                                                                              \
+    g_log ("gbp", G_LOG_LEVEL_DEBUG, "detector_x: %g %g, %g %g, %g %g",                                                     \
+           detector_angle_x[0], detector_angle_x[1], detector_angle_y[0], detector_angle_y[1], detector_angle_z[0],         \
+           detector_angle_z[1]);                                                                                            \
+    g_log ("gbp", G_LOG_LEVEL_DEBUG, "center_position: %g %g %g",                                                           \
+           center_position[0], center_position[1], center_position[2]);                                                     \
+    g_log ("gbp", G_LOG_LEVEL_DEBUG, "source_position: %g %g %g",                                                           \
+           source_position[0], source_position[1], source_position[2]);                                                     \
+    g_log ("gbp", G_LOG_LEVEL_DEBUG, "detector_position: %g %g %g",                                                         \
+           detector_position[0], detector_position[1], detector_position[2]);                                               \
+    return arg_index;                                                                                                       \
+}
+
 #define DEFINE_SET_STATIC_ARGS(type)                                                                                     \
 static void                                                                                                              \
 set_static_args_##type (UfoGeneralBackprojectTaskPrivate *priv,                                                          \
                         UfoRequisition *requisition,                                                                     \
                         const cl_kernel kernel)                                                                          \
 {                                                                                                                        \
-    type slice_z_position, region_x[2], region_y[2], axis_x[2], axis_y[2], axis_z[2],                                    \
-         volume_x[2], volume_y[2], volume_z[2], detector_x[2], detector_y[2], detector_z[2],                             \
-         gray_limit[2], center_position[4], source_position[4], detector_position[4], norm_factor;                       \
+    type slice_z_position, region_x[2], region_y[2], gray_limit[2], norm_factor;                                         \
     /* 0 = sampler, 1 = real size set in process (), thus we start with 2 */                                             \
     guint burst, j, i = 2;                                                                                               \
     gdouble gray_delta_recip = (gdouble) get_integer_maximum (st_values[priv->store_type].value_nick) /                  \
@@ -124,60 +278,22 @@ set_static_args_##type (UfoGeneralBackprojectTaskPrivate *priv,                 
         region_y[1] = 1.0f;                                                                                              \
     }                                                                                                                    \
     slice_z_position = (type) priv->z;                                                                                   \
-    fill_sincos_##type (axis_x, ufo_scarray_get_double (priv->lab->axis->angle->x, priv->count));                        \
-    fill_sincos_##type (axis_y, ufo_scarray_get_double (priv->lab->axis->angle->y, priv->count));                        \
-    fill_sincos_##type (axis_z, ufo_scarray_get_double (priv->lab->axis->angle->z, priv->count));                        \
-    fill_sincos_##type (volume_x, ufo_scarray_get_double (priv->lab->volume_angle->x, priv->count));                     \
-    fill_sincos_##type (volume_y, ufo_scarray_get_double (priv->lab->volume_angle->y, priv->count));                     \
-    fill_sincos_##type (volume_z, ufo_scarray_get_double (priv->lab->volume_angle->z, priv->count));                     \
-    fill_sincos_##type (detector_x, ufo_scarray_get_double (priv->lab->detector->angle->x, priv->count));                \
-    fill_sincos_##type (detector_y, ufo_scarray_get_double (priv->lab->detector->angle->y, priv->count));                \
-    fill_sincos_##type (detector_z, ufo_scarray_get_double (priv->lab->detector->angle->z, priv->count));                \
-    center_position[0] = (type) ufo_scarray_get_double (priv->lab->axis->position->x, priv->count);                      \
-    center_position[2] = (type) ufo_scarray_get_double (priv->lab->axis->position->z, priv->count);                      \
-    /* TODO: use only 2D center in the kernel */                                                                         \
-    center_position[1] = 0.0f;                                                                                           \
-    source_position[0] = (type) ufo_scarray_get_double (priv->lab->source_position->x, priv->count);                     \
-    source_position[1] = (type) ufo_scarray_get_double (priv->lab->source_position->y, priv->count);                     \
-    source_position[2] = (type) ufo_scarray_get_double (priv->lab->source_position->z, priv->count);                     \
-    detector_position[0] = (type) ufo_scarray_get_double (priv->lab->detector->position->x, priv->count);                \
-    detector_position[1] = (type) ufo_scarray_get_double (priv->lab->detector->position->y, priv->count);                \
-    detector_position[2] = (type) ufo_scarray_get_double (priv->lab->detector->position->z, priv->count);                \
     norm_factor = (type) norm_factor;                                                                                    \
     gray_limit[0] = (type) priv->gray_map_min;                                                                           \
     gray_limit[1] = (type) gray_delta_recip;                                                                             \
     UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (kernel, i++, sizeof (type##2), region_x));                                \
     UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (kernel, i++, sizeof (type##2), region_y));                                \
     UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (kernel, i++, sizeof (type), &slice_z_position));                          \
-    UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (kernel, i++, sizeof (type##2), axis_x));                                  \
-    UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (kernel, i++, sizeof (type##2), axis_y));                                  \
-    UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (kernel, i++, sizeof (type##2), axis_z));                                  \
-    UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (kernel, i++, sizeof (type##2), volume_x));                                \
-    UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (kernel, i++, sizeof (type##2), volume_y));                                \
-    UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (kernel, i++, sizeof (type##2), volume_z));                                \
-    UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (kernel, i++, sizeof (type##2), detector_x));                              \
-    UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (kernel, i++, sizeof (type##2), detector_y));                              \
-    UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (kernel, i++, sizeof (type##2), detector_z));                              \
-    UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (kernel, i++, sizeof (type##3), center_position));                         \
-    UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (kernel, i++, sizeof (type##3), source_position));                         \
-    UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (kernel, i++, sizeof (type##3), detector_position));                       \
+    if (priv->vectorized) {                                                                                              \
+        i = set_static_vector_arguments_##type (priv, kernel, i);                                                        \
+    } else {                                                                                                             \
+        i = set_static_scalar_arguments_##type (priv, kernel, i);                                                        \
+    }                                                                                                                    \
     UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (kernel, i++, sizeof (type), &norm_factor));                               \
     UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (kernel, i++, sizeof (type##2), gray_limit));                              \
     g_log ("gbp", G_LOG_LEVEL_DEBUG, "region_x: %g %g", region_x[0], region_x[1]);                                       \
     g_log ("gbp", G_LOG_LEVEL_DEBUG, "region_y: %g %g", region_y[0], region_y[1]);                                       \
     g_log ("gbp", G_LOG_LEVEL_DEBUG, "slice_z_position: %g", slice_z_position);                                          \
-    g_log ("gbp", G_LOG_LEVEL_DEBUG, "axis: %g %g, %g %g, %g %g",                                                        \
-           axis_x[0], axis_x[1], axis_y[0], axis_y[1], axis_z[0], axis_z[1]);                                            \
-    g_log ("gbp", G_LOG_LEVEL_DEBUG, "volume: %g %g, %g %g, %g %g",                                                      \
-           volume_x[0], volume_x[1], volume_y[0], volume_y[1], volume_z[0], volume_z[1]);                                \
-    g_log ("gbp", G_LOG_LEVEL_DEBUG, "detector_x: %g %g, %g %g, %g %g",                                                  \
-           detector_x[0], detector_x[1], detector_y[0], detector_y[1], detector_z[0], detector_z[1]);                    \
-    g_log ("gbp", G_LOG_LEVEL_DEBUG, "center_position: %g %g %g",                                                        \
-           center_position[0], center_position[1], center_position[2]);                                                  \
-    g_log ("gbp", G_LOG_LEVEL_DEBUG, "source_position: %g %g %g",                                                        \
-           source_position[0], source_position[1], source_position[2]);                                                  \
-    g_log ("gbp", G_LOG_LEVEL_DEBUG, "detector_position: %g %g %g",                                                      \
-           detector_position[0], detector_position[1], detector_position[2]);                                            \
     g_log ("gbp", G_LOG_LEVEL_DEBUG, "norm_factor: %g", norm_factor);                                                    \
     g_log ("gbp", G_LOG_LEVEL_DEBUG, "gray_limit: %g %g", gray_limit[0], gray_limit[1]);                                 \
                                                                                                                          \
@@ -290,7 +406,7 @@ struct _UfoGeneralBackprojectTaskPrivate {
     UfoResources *resources;
     cl_mem *projections;
     cl_mem *chunks;
-    cl_mem *cl_regions;
+    cl_mem *cl_regions, *vector_arguments;
     guint num_slices, num_slices_per_chunk, num_chunks;
     guint num_projections;
     gdouble overall_angle;
@@ -1102,6 +1218,32 @@ create_images (UfoGeneralBackprojectTaskPrivate *priv, gsize width, gsize height
     }
 }
 
+static cl_mem
+transfer_host_to_device (cl_context context, gpointer host_array, gsize num_bytes)
+{
+    cl_int cl_error;
+    cl_mem device_array;
+
+    device_array = clCreateBuffer (context,
+                                   CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
+                                   num_bytes,
+                                   host_array,
+                                   &cl_error);
+    UFO_RESOURCES_CHECK_CLERR (cl_error);
+
+    return device_array;
+}
+
+DEFINE_TRANSFER_ANGULAR_ARGUMENT (cl_float)
+DEFINE_TRANSFER_ANGULAR_ARGUMENT (cl_double)
+DEFINE_TRANSFER_POSITINAL_ARGUMENT (cl_float)
+DEFINE_TRANSFER_POSITINAL_ARGUMENT (cl_double)
+DEFINE_SET_ANGULAR_VECTOR_KERNEL_ARGUMENT (cl_float)
+DEFINE_SET_ANGULAR_VECTOR_KERNEL_ARGUMENT (cl_double)
+DEFINE_SET_STATIC_SCALAR_ARGUMENTS (cl_float)
+DEFINE_SET_STATIC_SCALAR_ARGUMENTS (cl_double)
+DEFINE_SET_STATIC_VECTOR_ARGUMENTS (cl_float)
+DEFINE_SET_STATIC_VECTOR_ARGUMENTS (cl_double)
 DEFINE_SET_STATIC_ARGS (cl_float)
 DEFINE_SET_STATIC_ARGS (cl_double)
 
@@ -1277,6 +1419,7 @@ ufo_general_backproject_task_setup (UfoTask *task,
     priv->projections = NULL;
     priv->chunks = NULL;
     priv->cl_regions = NULL;
+    priv->vector_arguments = NULL;
 
     /* Check parameter values */
     if (!priv->num_projections) {
@@ -1831,6 +1974,14 @@ ufo_general_backproject_task_finalize (GObject *object)
         }
         g_free (priv->cl_regions);
         priv->cl_regions = NULL;
+    }
+
+    if (priv->vector_arguments) {
+        for (i = 0; i < NUM_VECTOR_ARGUMENTS; i++) {
+            UFO_RESOURCES_CHECK_CLERR (clReleaseMemObject (priv->vector_arguments[i]));
+        }
+        g_free (priv->vector_arguments);
+        priv->vector_arguments = NULL;
     }
 
     if (priv->kernel) {
