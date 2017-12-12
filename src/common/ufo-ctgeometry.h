@@ -17,8 +17,8 @@
  * License along with this library.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef UFO_CTLAB_H
-#define UFO_CTLAB_H
+#ifndef UFO_CTGEOMETRY_H
+#define UFO_CTGEOMETRY_H
 
 #include <ufo/ufo.h>
 #include "ufo-scarray.h"
@@ -39,18 +39,18 @@ typedef struct {
     UfoPoint  *volume_angle;
     UfoVector *axis;
     UfoVector *detector;
-} UfoCTlab;
+} UfoCTGeometry;
 
-UfoPoint     *ufo_point_new             (UfoScarray *x,
-                                         UfoScarray *y,
-                                         UfoScarray *z);
-UfoPoint     *ufo_point_copy            (const UfoPoint *point);
-void          ufo_point_free            (UfoPoint *point);
-gboolean      ufo_point_are_almost_zero (UfoPoint *point);
-UfoVector    *ufo_vector_new            (UfoPoint *position,
-                                         UfoPoint *angle);
-void          ufo_vector_free           (UfoVector *vector);
-UfoCTlab     *ufo_ctlab_new             (void);
-void          ufo_ctlab_free            (UfoCTlab *lab);
+UfoPoint        *ufo_point_new             (UfoScarray *x,
+                                            UfoScarray *y,
+                                            UfoScarray *z);
+UfoPoint        *ufo_point_copy            (const UfoPoint *point);
+void             ufo_point_free            (UfoPoint *point);
+gboolean         ufo_point_are_almost_zero (UfoPoint *point);
+UfoVector       *ufo_vector_new            (UfoPoint *position,
+                                            UfoPoint *angle);
+void             ufo_vector_free           (UfoVector *vector);
+UfoCTGeometry   *ufo_ctgeometry_new        (void);
+void             ufo_ctgeometry_free       (UfoCTGeometry *geometry);
 
 #endif

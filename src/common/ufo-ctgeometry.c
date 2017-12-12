@@ -18,7 +18,7 @@
  */
 
 #include <math.h>
-#include "ufo-ctlab.h"
+#include "ufo-ctgeometry.h"
 #include "ufo-scarray.h"
 
 UfoPoint *
@@ -75,12 +75,12 @@ ufo_vector_free (UfoVector *vector)
 }
 
 /**
- * Create a new computed tomography laboratory with parallel beam geometry.
+ * Create a new computed tomography geometry with parallel beam geometry.
  */
-UfoCTlab *
-ufo_ctlab_new (void)
+UfoCTGeometry *
+ufo_ctgeometry_new (void)
 {
-    UfoCTlab *lab = g_new0 (UfoCTlab, 1);
+    UfoCTGeometry *geometry = g_new0 (UfoCTGeometry, 1);
     UfoPoint *position, *angle;
     UfoScarray *one, *one_inf;
     GValue double_value = G_VALUE_INIT;
@@ -92,10 +92,10 @@ ufo_ctlab_new (void)
     position = ufo_point_new (one, one, one);
     angle = ufo_point_new (one, one, one);
 
-    lab->source_position = ufo_point_new (one, one_inf, one);
-    lab->volume_angle = ufo_point_new (one, one, one);
-    lab->axis = ufo_vector_new (position, angle);
-    lab->detector = ufo_vector_new (position, angle);
+    geometry->source_position = ufo_point_new (one, one_inf, one);
+    geometry->volume_angle = ufo_point_new (one, one, one);
+    geometry->axis = ufo_vector_new (position, angle);
+    geometry->detector = ufo_vector_new (position, angle);
 
     ufo_scarray_free (one);
     ufo_scarray_free (one_inf);
@@ -103,15 +103,15 @@ ufo_ctlab_new (void)
     ufo_point_free (angle);
     g_value_unset (&double_value);
 
-    return lab;
+    return geometry;
 }
 
 void
-ufo_ctlab_free (UfoCTlab *lab)
+ufo_ctgeometry_free (UfoCTGeometry *geometry)
 {
-    ufo_point_free (lab->source_position);
-    ufo_point_free (lab->volume_angle);
-    ufo_vector_free (lab->axis);
-    ufo_vector_free (lab->detector);
-    g_free (lab);
+    ufo_point_free (geometry->source_position);
+    ufo_point_free (geometry->volume_angle);
+    ufo_vector_free (geometry->axis);
+    ufo_vector_free (geometry->detector);
+    g_free (geometry);
 }
