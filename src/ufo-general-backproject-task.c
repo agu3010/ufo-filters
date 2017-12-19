@@ -249,6 +249,22 @@ set_static_scalar_arguments_##type (UfoGeneralBackprojectTaskPrivate *priv,     
     return arg_index;                                                                                                       \
 }
 
+#define DEFINE_COMPUTE_SLICE_REGION(type)                                                                                   \
+static void                                                                                                                 \
+compute_slice_region_##type (UfoGeneralBackprojectTaskPrivate *priv,                                                        \
+                             gsize length,                                                                                  \
+                             UfoScarray *region,                                                                            \
+                             type region_for_opencl[2])                                                                     \
+{                                                                                                                           \
+    if (ufo_scarray_get_int (region, 2)) {                                                                                  \
+        region_for_opencl[0] = (type) ufo_scarray_get_int (region, 0);                                                      \
+        region_for_opencl[1] = (type) ufo_scarray_get_int (region, 2);                                                      \
+    } else {                                                                                                                \
+        region_for_opencl[0] = (type) -(length / 2);                                                                        \
+        region_for_opencl[1] = (type) 1;                                                                                    \
+    }                                                                                                                       \
+}
+
 #define DEFINE_SET_STATIC_ARGS(type)                                                                                     \
 static void                                                                                                              \
 set_static_args_##type (UfoGeneralBackprojectTaskPrivate *priv,                                                          \
@@ -265,18 +281,8 @@ set_static_args_##type (UfoGeneralBackprojectTaskPrivate *priv,                 
                                                                                                                          \
     UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (kernel, 0, sizeof (cl_sampler), &priv->sampler));                         \
                                                                                                                          \
-    region_x[0] = (type) ufo_scarray_get_int (priv->region_x, 0);                                                        \
-    region_x[1] = (type) ufo_scarray_get_int (priv->region_x, 2);                                                        \
-    if (!region_x[1]) {                                                                                                  \
-        region_x[0] = (type) -requisition->dims[0] / 2.0;                                                                \
-        region_x[1] = 1.0f;                                                                                              \
-    }                                                                                                                    \
-    region_y[0] = (type) ufo_scarray_get_int (priv->region_y, 0);                                                        \
-    region_y[1] = (type) ufo_scarray_get_int (priv->region_y, 2);                                                        \
-    if (!region_y[1]) {                                                                                                  \
-        region_y[0] = (type) -requisition->dims[1] / 2.0;                                                                \
-        region_y[1] = 1.0f;                                                                                              \
-    }                                                                                                                    \
+    compute_slice_region_##type (priv, requisition->dims[0], priv->region_x, region_x);                                  \
+    compute_slice_region_##type (priv, requisition->dims[1], priv->region_y, region_y);                                  \
     slice_z_position = (type) priv->z;                                                                                   \
     norm_factor = (type) norm_factor;                                                                                    \
     gray_limit[0] = (type) priv->gray_map_min;                                                                           \
@@ -1245,6 +1251,8 @@ DEFINE_SET_STATIC_SCALAR_ARGUMENTS (cl_float)
 DEFINE_SET_STATIC_SCALAR_ARGUMENTS (cl_double)
 DEFINE_SET_STATIC_VECTOR_ARGUMENTS (cl_float)
 DEFINE_SET_STATIC_VECTOR_ARGUMENTS (cl_double)
+DEFINE_COMPUTE_SLICE_REGION (cl_float)
+DEFINE_COMPUTE_SLICE_REGION (cl_double)
 DEFINE_SET_STATIC_ARGS (cl_float)
 DEFINE_SET_STATIC_ARGS (cl_double)
 
