@@ -394,7 +394,7 @@ struct _UfoGeneralBackprojectTaskPrivate {
     /* Properties */
     guint burst;
     gdouble z;
-    UfoScarray *region, *region_x, *region_y;
+    UfoScarray *region, *region_x, *region_y, *angle;
     UfoCTGeometry *geometry;
     ComputeType compute_type, result_type;
     StoreType store_type;
@@ -455,6 +455,7 @@ enum {
     PROP_COMPUTE_TYPE,
     PROP_RESULT_TYPE,
     PROP_STORE_TYPE,
+    PROP_ANGLE,
     PROP_OVERALL_ANGLE,
     PROP_ADDRESSING_MODE,
     PROP_GRAY_MAP_MIN,
@@ -1636,7 +1637,11 @@ ufo_general_backproject_task_process (UfoTask *task,
     /* Setup tomographic rotation angle dependent arguments */
     copy_to_image (cmd_queue, inputs[0], priv->projections[index], in_req.dims[0], in_req.dims[1]);
     ki = STATIC_ARG_OFFSET + burst;
-    rot_angle = ((gdouble) priv->count) / priv->num_projections * priv->overall_angle;
+    if (ufo_scarray_has_n_values (priv->angle, priv->num_projections)) {
+        rot_angle = ufo_scarray_get_double (priv->angle, priv->count);
+    } else {
+        rot_angle = ((gdouble) priv->count) / priv->num_projections * priv->overall_angle;
+    }
     if (priv->compute_type == CT_FLOAT) {
         fill_sincos_cl_float (f_tomo_angle, rot_angle);
         UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (kernel, ki + index, sizeof (cl_float2), f_tomo_angle));
@@ -1808,6 +1813,9 @@ ufo_general_backproject_task_set_property (GObject *object,
         case PROP_STORE_TYPE:
             priv->store_type = g_value_get_enum (value);
             break;
+        case PROP_ANGLE:
+            ufo_scarray_get_value (priv->angle, value);
+            break;
         case PROP_OVERALL_ANGLE:
             priv->overall_angle = g_value_get_double (value);
             break;
@@ -1916,6 +1924,9 @@ ufo_general_backproject_task_get_property (GObject *object,
         case PROP_STORE_TYPE:
             g_value_set_enum (value, priv->store_type);
             break;
+        case PROP_ANGLE:
+            ufo_scarray_set_value (priv->angle, value);
+            break;
         case PROP_OVERALL_ANGLE:
             g_value_set_double (value, priv->overall_angle);
             break;
@@ -1945,6 +1956,7 @@ ufo_general_backproject_task_finalize (GObject *object)
     ufo_scarray_free (priv->region);
     ufo_scarray_free (priv->region_x);
     ufo_scarray_free (priv->region_y);
+    ufo_scarray_free (priv->angle);
     ufo_ctgeometry_free (priv->geometry);
     g_hash_table_destroy (priv->node_props_table);
 
@@ -2239,6 +2251,13 @@ ufo_general_backproject_task_class_init (UfoGeneralBackprojectTaskClass *klass)
             ST_FLOAT,
             G_PARAM_READWRITE);
 
+    properties[PROP_ANGLE] =
+        g_param_spec_value_array ("angle",
+            "Tomographic rotation angles for every processed projection [rad]",
+            "Tomographic rotation angles for every processed projection [rad]",
+            double_region_vals,
+            G_PARAM_READWRITE);
+
     properties[PROP_OVERALL_ANGLE] =
         g_param_spec_double ("overall-angle",
             "Angle covered by all projections [rad]",
@@ -2296,6 +2315,7 @@ ufo_general_backproject_task_init(UfoGeneralBackprojectTask *self)
     self->priv->region = ufo_scarray_new (3, G_TYPE_DOUBLE, NULL);
     self->priv->region_x = ufo_scarray_new (3, G_TYPE_INT, NULL);
     self->priv->region_y = ufo_scarray_new (3, G_TYPE_INT, NULL);
+    self->priv->angle = ufo_scarray_new (1, G_TYPE_DOUBLE, NULL);
     self->priv->geometry = ufo_ctgeometry_new ();
 
     /* Private */
