@@ -310,27 +310,6 @@ set_static_args_##type (UfoGeneralBackprojectTaskPrivate *priv,                 
 
 /*{{{ Enumerations */
 typedef enum {
-    PARAMETER_AXIS_ROTATION_X,
-    PARAMETER_AXIS_ROTATION_Y,
-    PARAMETER_AXIS_ROTATION_Z,
-    PARAMETER_VOLUME_ROTATION_X,
-    PARAMETER_VOLUME_ROTATION_Y,
-    PARAMETER_VOLUME_ROTATION_Z,
-    PARAMETER_DETECTOR_ROTATION_X,
-    PARAMETER_DETECTOR_ROTATION_Y,
-    PARAMETER_DETECTOR_ROTATION_Z,
-    PARAMETER_DETECTOR_POSITION_X,
-    PARAMETER_DETECTOR_POSITION_Y,
-    PARAMETER_DETECTOR_POSITION_Z,
-    PARAMETER_SOURCE_POSITION_X,
-    PARAMETER_SOURCE_POSITION_Y,
-    PARAMETER_SOURCE_POSITION_Z,
-    PARAMETER_CENTER_POSITION_X,
-    PARAMETER_CENTER_POSITION_Z,
-    PARAMETER_Z
-} Parameter;
-
-typedef enum {
     FT_HALF,
     FT_FLOAT,
     FT_DOUBLE
@@ -351,24 +330,24 @@ typedef enum {
 } StoreType;
 
 static const GEnumValue parameter_values[] = {
-    { PARAMETER_AXIS_ROTATION_X,     "AXIS_ROTATION_X",     "axis-angle-x" },
-    { PARAMETER_AXIS_ROTATION_Y,     "AXIS_ROTATION_Y",     "axis-angle-y" },
-    { PARAMETER_AXIS_ROTATION_Z,     "AXIS_ROTATION_Z",     "axis-angle-z" },
-    { PARAMETER_VOLUME_ROTATION_X,   "VOLUME_ROTATION_X",   "volume-angle-x" },
-    { PARAMETER_VOLUME_ROTATION_Y,   "VOLUME_ROTATION_Y",   "volume-angle-y" },
-    { PARAMETER_VOLUME_ROTATION_Z,   "VOLUME_ROTATION_Z",   "volume-angle-z" },
-    { PARAMETER_DETECTOR_ROTATION_X, "DETECTOR_ROTATION_X", "detector-angle-x" },
-    { PARAMETER_DETECTOR_ROTATION_Y, "DETECTOR_ROTATION_Y", "detector-angle-y" },
-    { PARAMETER_DETECTOR_ROTATION_Z, "DETECTOR_ROTATION_Z", "detector-angle-z" },
-    { PARAMETER_DETECTOR_POSITION_X, "DETECTOR_POSITION_X", "detector-position-x" },
-    { PARAMETER_DETECTOR_POSITION_Y, "DETECTOR_POSITION_Y", "detector-position-y" },
-    { PARAMETER_DETECTOR_POSITION_Z, "DETECTOR_POSITION_Z", "detector-position-z" },
-    { PARAMETER_SOURCE_POSITION_X,   "SOURCE_POSITION_X",   "source-position-x" },
-    { PARAMETER_SOURCE_POSITION_Y,   "SOURCE_POSITION_Y",   "source-position-y" },
-    { PARAMETER_SOURCE_POSITION_Z,   "SOURCE_POSITION_Z",   "source-position-z" },
-    { PARAMETER_CENTER_POSITION_X,   "CENTER_POSITION_X",   "center-position-x" },
-    { PARAMETER_CENTER_POSITION_Z,   "CENTER_POSITION_Z",   "center-position-z" },
-    { PARAMETER_Z,                   "PARAMETER_Z",         "z" },
+    { UFO_UNI_RECO_PARAMETER_AXIS_ROTATION_X,     "AXIS_ROTATION_X",     "axis-angle-x" },
+    { UFO_UNI_RECO_PARAMETER_AXIS_ROTATION_Y,     "AXIS_ROTATION_Y",     "axis-angle-y" },
+    { UFO_UNI_RECO_PARAMETER_AXIS_ROTATION_Z,     "AXIS_ROTATION_Z",     "axis-angle-z" },
+    { UFO_UNI_RECO_PARAMETER_VOLUME_ROTATION_X,   "VOLUME_ROTATION_X",   "volume-angle-x" },
+    { UFO_UNI_RECO_PARAMETER_VOLUME_ROTATION_Y,   "VOLUME_ROTATION_Y",   "volume-angle-y" },
+    { UFO_UNI_RECO_PARAMETER_VOLUME_ROTATION_Z,   "VOLUME_ROTATION_Z",   "volume-angle-z" },
+    { UFO_UNI_RECO_PARAMETER_DETECTOR_ROTATION_X, "DETECTOR_ROTATION_X", "detector-angle-x" },
+    { UFO_UNI_RECO_PARAMETER_DETECTOR_ROTATION_Y, "DETECTOR_ROTATION_Y", "detector-angle-y" },
+    { UFO_UNI_RECO_PARAMETER_DETECTOR_ROTATION_Z, "DETECTOR_ROTATION_Z", "detector-angle-z" },
+    { UFO_UNI_RECO_PARAMETER_DETECTOR_POSITION_X, "DETECTOR_POSITION_X", "detector-position-x" },
+    { UFO_UNI_RECO_PARAMETER_DETECTOR_POSITION_Y, "DETECTOR_POSITION_Y", "detector-position-y" },
+    { UFO_UNI_RECO_PARAMETER_DETECTOR_POSITION_Z, "DETECTOR_POSITION_Z", "detector-position-z" },
+    { UFO_UNI_RECO_PARAMETER_SOURCE_POSITION_X,   "SOURCE_POSITION_X",   "source-position-x" },
+    { UFO_UNI_RECO_PARAMETER_SOURCE_POSITION_Y,   "SOURCE_POSITION_Y",   "source-position-y" },
+    { UFO_UNI_RECO_PARAMETER_SOURCE_POSITION_Z,   "SOURCE_POSITION_Z",   "source-position-z" },
+    { UFO_UNI_RECO_PARAMETER_CENTER_POSITION_X,   "CENTER_POSITION_X",   "center-position-x" },
+    { UFO_UNI_RECO_PARAMETER_CENTER_POSITION_Z,   "CENTER_POSITION_Z",   "center-position-z" },
+    { UFO_UNI_RECO_PARAMETER_Z,                   "UFO_UNI_RECO_PARAMETER_Z",         "z" },
     { 0, NULL, NULL}
 };
 
@@ -404,7 +383,7 @@ struct _UfoGeneralBackprojectTaskPrivate {
     UfoCTGeometry *geometry;
     ComputeType compute_type, result_type;
     StoreType store_type;
-    Parameter parameter;
+    UfoUniRecoParameter parameter;
     gdouble gray_map_min, gray_map_max;
     /* Private */
     gboolean vectorized;
@@ -524,54 +503,54 @@ get_integer_maximum (const gchar *type_name)
 }
 
 static gboolean
-is_axis_parameter (Parameter parameter)
+is_axis_parameter (UfoUniRecoParameter parameter)
 {
-    return parameter == PARAMETER_AXIS_ROTATION_X ||
-           parameter == PARAMETER_AXIS_ROTATION_Y ||
-           parameter == PARAMETER_AXIS_ROTATION_Z;
+    return parameter == UFO_UNI_RECO_PARAMETER_AXIS_ROTATION_X ||
+           parameter == UFO_UNI_RECO_PARAMETER_AXIS_ROTATION_Y ||
+           parameter == UFO_UNI_RECO_PARAMETER_AXIS_ROTATION_Z;
 }
 
 static gboolean
-is_volume_parameter (Parameter parameter)
+is_volume_parameter (UfoUniRecoParameter parameter)
 {
-    return parameter == PARAMETER_VOLUME_ROTATION_X ||
-           parameter == PARAMETER_VOLUME_ROTATION_Y ||
-           parameter == PARAMETER_VOLUME_ROTATION_Z;
+    return parameter == UFO_UNI_RECO_PARAMETER_VOLUME_ROTATION_X ||
+           parameter == UFO_UNI_RECO_PARAMETER_VOLUME_ROTATION_Y ||
+           parameter == UFO_UNI_RECO_PARAMETER_VOLUME_ROTATION_Z;
 }
 
 static gboolean
-is_detector_rotation_parameter (Parameter parameter)
+is_detector_rotation_parameter (UfoUniRecoParameter parameter)
 {
-    return parameter == PARAMETER_DETECTOR_ROTATION_X ||
-           parameter == PARAMETER_DETECTOR_ROTATION_Y ||
-           parameter == PARAMETER_DETECTOR_ROTATION_Z;
+    return parameter == UFO_UNI_RECO_PARAMETER_DETECTOR_ROTATION_X ||
+           parameter == UFO_UNI_RECO_PARAMETER_DETECTOR_ROTATION_Y ||
+           parameter == UFO_UNI_RECO_PARAMETER_DETECTOR_ROTATION_Z;
 }
 
 static gboolean
-is_center_position_parameter (Parameter parameter)
+is_center_position_parameter (UfoUniRecoParameter parameter)
 {
-    return parameter == PARAMETER_CENTER_POSITION_X ||
-           parameter == PARAMETER_CENTER_POSITION_Z;
+    return parameter == UFO_UNI_RECO_PARAMETER_CENTER_POSITION_X ||
+           parameter == UFO_UNI_RECO_PARAMETER_CENTER_POSITION_Z;
 }
 
 static gboolean
-is_source_position_parameter (Parameter parameter)
+is_source_position_parameter (UfoUniRecoParameter parameter)
 {
-    return parameter == PARAMETER_SOURCE_POSITION_X ||
-           parameter == PARAMETER_SOURCE_POSITION_Y ||
-           parameter == PARAMETER_SOURCE_POSITION_Z;
+    return parameter == UFO_UNI_RECO_PARAMETER_SOURCE_POSITION_X ||
+           parameter == UFO_UNI_RECO_PARAMETER_SOURCE_POSITION_Y ||
+           parameter == UFO_UNI_RECO_PARAMETER_SOURCE_POSITION_Z;
 }
 
 static gboolean
-is_detector_position_parameter (Parameter parameter)
+is_detector_position_parameter (UfoUniRecoParameter parameter)
 {
-    return parameter == PARAMETER_DETECTOR_POSITION_X ||
-           parameter == PARAMETER_DETECTOR_POSITION_Y ||
-           parameter == PARAMETER_DETECTOR_POSITION_Z;
+    return parameter == UFO_UNI_RECO_PARAMETER_DETECTOR_POSITION_X ||
+           parameter == UFO_UNI_RECO_PARAMETER_DETECTOR_POSITION_Y ||
+           parameter == UFO_UNI_RECO_PARAMETER_DETECTOR_POSITION_Z;
 }
 
 static gboolean
-is_parameter_positional (Parameter parameter)
+is_parameter_positional (UfoUniRecoParameter parameter)
 {
     return is_center_position_parameter (parameter) ||
            is_source_position_parameter (parameter) ||
@@ -579,7 +558,7 @@ is_parameter_positional (Parameter parameter)
 }
 
 static gboolean
-is_parameter_angular (Parameter parameter)
+is_parameter_angular (UfoUniRecoParameter parameter)
 {
     return is_axis_parameter (parameter) ||
            is_volume_parameter (parameter) ||
@@ -603,13 +582,13 @@ replace_substring (const gchar *haystack, const gchar *needle, const gchar *repl
 
 /*{{{ Kernel creation*/
 static gchar *
-replace_parameter_dashes (Parameter parameter)
+replace_parameter_dashes (UfoUniRecoParameter parameter)
 {
     return replace_substring (parameter_values[parameter].value_nick, "-", "_");
 }
 
 static gchar *
-get_kernel_parameter_name (Parameter parameter)
+get_kernel_parameter_name (UfoUniRecoParameter parameter)
 {
     gchar **entries, *result, *param_kernel_name;
     param_kernel_name = replace_parameter_dashes (parameter);
@@ -646,7 +625,7 @@ make_template (UfoGeneralBackprojectTaskPrivate *priv)
             g_warning ("Error obtaining general backprojection kernel header template");
             return NULL;
         }
-        if (priv->parameter != PARAMETER_Z) {
+        if (priv->parameter != UFO_UNI_RECO_PARAMETER_Z) {
             kernel_parameter_name = get_kernel_parameter_name (priv->parameter);
             tmp = g_strconcat ("global_", kernel_parameter_name, NULL);
             header_1 = replace_substring (header, kernel_parameter_name, tmp);
@@ -743,11 +722,11 @@ make_type_conversion (const gchar *compute_type, const gchar *store_type)
  * copy the global values to a private variable.
  */
 static gchar *
-make_parameter_initial_assignment (Parameter parameter)
+make_parameter_initial_assignment (UfoUniRecoParameter parameter)
 {
     gchar *code = NULL, *kernel_parameter_name;
 
-    if (parameter == PARAMETER_Z) {
+    if (parameter == UFO_UNI_RECO_PARAMETER_Z) {
         code = g_strdup ("");
     } else {
         kernel_parameter_name = get_kernel_parameter_name (parameter);
@@ -769,13 +748,13 @@ make_parameter_initial_assignment (Parameter parameter)
  * Make parameter assignment.
  */
 static gchar *
-make_parameter_assignment (Parameter parameter)
+make_parameter_assignment (UfoUniRecoParameter parameter)
 {
     gchar **entries, *param_kernel_name;
     gchar *code = NULL;
     param_kernel_name = replace_parameter_dashes (parameter);
 
-    if (parameter == PARAMETER_Z) {
+    if (parameter == UFO_UNI_RECO_PARAMETER_Z) {
         code = g_strdup ("\tvoxel_0.z = region[idz].x;\n");
     } else if (is_parameter_positional (parameter)) {
         entries = g_strsplit (param_kernel_name, "_", 3);
@@ -926,7 +905,7 @@ make_projection_computation (gboolean perpendicular_detector, gboolean parallel_
  * geometry settings.
  */
 static gchar *
-make_transformations (Parameter parameter, gboolean vectorized, gint burst, gboolean with_volume,
+make_transformations (UfoUniRecoParameter parameter, gboolean vectorized, gint burst, gboolean with_volume,
                       gboolean with_axis, gboolean perpendicular_detector, gboolean parallel_beam,
                       const gchar *compute_type)
 {
@@ -1085,7 +1064,7 @@ make_transformations (Parameter parameter, gboolean vectorized, gint burst, gboo
 static gchar *
 make_kernel (gchar *template, gboolean vectorized, gint burst, gboolean with_axis, gboolean with_volume,
              gboolean perpendicular_detector, gboolean parallel_beam, const gchar *compute_type,
-             const gchar *result_type, const gchar *store_type, Parameter parameter)
+             const gchar *result_type, const gchar *store_type, UfoUniRecoParameter parameter)
 {
     const gchar *double_pragma_def, *double_pragma, *half_pragma_def, *half_pragma,
           *image_args_fmt, *trigonomoerty_args_fmt;
@@ -2074,7 +2053,7 @@ ufo_general_backproject_task_class_init (UfoGeneralBackprojectTaskClass *klass)
             "Which parameter will be varied along the z-axis",
             "Which parameter will be varied along the z-axis",
             g_enum_register_static ("GBPParameter", parameter_values),
-            PARAMETER_Z,
+            UFO_UNI_RECO_PARAMETER_Z,
             G_PARAM_READWRITE);
 
     properties[PROP_Z] =
@@ -2308,7 +2287,7 @@ ufo_general_backproject_task_init(UfoGeneralBackprojectTask *self)
 
     /* Scalars */
     self->priv->burst = 0;
-    self->priv->parameter = PARAMETER_Z;
+    self->priv->parameter = UFO_UNI_RECO_PARAMETER_Z;
     self->priv->z = 0.0;
     self->priv->num_projections = 0;
     self->priv->compute_type = CT_FLOAT;
