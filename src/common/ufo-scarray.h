@@ -33,6 +33,9 @@ void        ufo_scarray_set_value       (UfoScarray     *scarray,
                                          GValue         *value);
 void        ufo_scarray_get_value       (UfoScarray     *scarray,
                                          const GValue   *value);
+void        ufo_scarray_insert          (UfoScarray     *scarray,
+                                         guint           index,
+                                         const GValue   *value);
 gint        ufo_scarray_get_int         (UfoScarray     *scarray,
                                          guint           index);
 gfloat      ufo_scarray_get_float       (UfoScarray     *scarray,

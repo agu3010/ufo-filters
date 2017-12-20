@@ -85,6 +85,14 @@ ufo_scarray_get_value (UfoScarray *scarray,
     scarray->array = g_value_array_copy (g_value_get_boxed (value));
 }
 
+void
+ufo_scarray_insert (UfoScarray *scarray,
+                    guint index,
+                    const GValue *value)
+{
+    g_value_array_insert (scarray->array, index, value);
+}
+
 gint
 ufo_scarray_get_int (UfoScarray     *scarray,
                      guint           index)
