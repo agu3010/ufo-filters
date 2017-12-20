@@ -21,10 +21,10 @@
 #include "ufo-ctgeometry.h"
 #include "ufo-scarray.h"
 
-UfoPoint *
-ufo_point_new (UfoScarray *x, UfoScarray *y, UfoScarray *z)
+UfoScpoint *
+ufo_scpoint_new (UfoScarray *x, UfoScarray *y, UfoScarray *z)
 {
-    UfoPoint *point = g_new0 (UfoPoint, 1);
+    UfoScpoint *point = g_new0 (UfoScpoint, 1);
 
     point->x = ufo_scarray_copy (x);
     point->y = ufo_scarray_copy (y);
@@ -33,14 +33,14 @@ ufo_point_new (UfoScarray *x, UfoScarray *y, UfoScarray *z)
     return point;
 }
 
-UfoPoint *
-ufo_point_copy (const UfoPoint *point)
+UfoScpoint *
+ufo_scpoint_copy (const UfoScpoint *point)
 {
-    return ufo_point_new (point->x, point->y, point->z);
+    return ufo_scpoint_new (point->x, point->y, point->z);
 }
 
 void
-ufo_point_free (UfoPoint *point)
+ufo_scpoint_free (UfoScpoint *point)
 {
     ufo_scarray_free (point->x);
     ufo_scarray_free (point->y);
@@ -49,28 +49,28 @@ ufo_point_free (UfoPoint *point)
 }
 
 gboolean
-ufo_point_are_almost_zero (UfoPoint *point)
+ufo_scpoint_are_almost_zero (UfoScpoint *point)
 {
     return ufo_scarray_is_almost_zero (point->x) &&
            ufo_scarray_is_almost_zero (point->y) &&
            ufo_scarray_is_almost_zero (point->z);
 }
 
-UfoVector *
-ufo_vector_new (UfoPoint *position, UfoPoint *angle)
+UfoScvector *
+ufo_scvector_new (UfoScpoint *position, UfoScpoint *angle)
 {
-    UfoVector *vector = g_new0 (UfoVector, 1);
-    vector->position = ufo_point_copy (position);
-    vector->angle = ufo_point_copy (angle);
+    UfoScvector *vector = g_new0 (UfoScvector, 1);
+    vector->position = ufo_scpoint_copy (position);
+    vector->angle = ufo_scpoint_copy (angle);
 
     return vector;
 }
 
 void
-ufo_vector_free (UfoVector *vector)
+ufo_scvector_free (UfoScvector *vector)
 {
-    ufo_point_free (vector->position);
-    ufo_point_free (vector->angle);
+    ufo_scpoint_free (vector->position);
+    ufo_scpoint_free (vector->angle);
     g_free (vector);
 }
 
@@ -81,7 +81,7 @@ UfoCTGeometry *
 ufo_ctgeometry_new (void)
 {
     UfoCTGeometry *geometry = g_new0 (UfoCTGeometry, 1);
-    UfoPoint *position, *angle;
+    UfoScpoint *position, *angle;
     UfoScarray *one, *one_inf;
     GValue double_value = G_VALUE_INIT;
 
@@ -89,18 +89,18 @@ ufo_ctgeometry_new (void)
     g_value_set_double (&double_value, -INFINITY);
     one = ufo_scarray_new (1, G_TYPE_DOUBLE, NULL);
     one_inf = ufo_scarray_new (1, G_TYPE_DOUBLE, &double_value);
-    position = ufo_point_new (one, one, one);
-    angle = ufo_point_new (one, one, one);
+    position = ufo_scpoint_new (one, one, one);
+    angle = ufo_scpoint_new (one, one, one);
 
-    geometry->source_position = ufo_point_new (one, one_inf, one);
-    geometry->volume_angle = ufo_point_new (one, one, one);
-    geometry->axis = ufo_vector_new (position, angle);
-    geometry->detector = ufo_vector_new (position, angle);
+    geometry->source_position = ufo_scpoint_new (one, one_inf, one);
+    geometry->volume_angle = ufo_scpoint_new (one, one, one);
+    geometry->axis = ufo_scvector_new (position, angle);
+    geometry->detector = ufo_scvector_new (position, angle);
 
     ufo_scarray_free (one);
     ufo_scarray_free (one_inf);
-    ufo_point_free (position);
-    ufo_point_free (angle);
+    ufo_scpoint_free (position);
+    ufo_scpoint_free (angle);
     g_value_unset (&double_value);
 
     return geometry;
@@ -109,9 +109,9 @@ ufo_ctgeometry_new (void)
 void
 ufo_ctgeometry_free (UfoCTGeometry *geometry)
 {
-    ufo_point_free (geometry->source_position);
-    ufo_point_free (geometry->volume_angle);
-    ufo_vector_free (geometry->axis);
-    ufo_vector_free (geometry->detector);
+    ufo_scpoint_free (geometry->source_position);
+    ufo_scpoint_free (geometry->volume_angle);
+    ufo_scvector_free (geometry->axis);
+    ufo_scvector_free (geometry->detector);
     g_free (geometry);
 }

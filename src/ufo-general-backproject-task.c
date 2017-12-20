@@ -123,7 +123,7 @@ transfer_angular_argument_##type (UfoGeneralBackprojectTaskPrivate *priv,       
 #define DEFINE_TRANSFER_POSITINAL_ARGUMENT(type)                                \
 static cl_mem                                                                   \
 transfer_positional_argument_##type (UfoGeneralBackprojectTaskPrivate *priv,    \
-                                     UfoPoint *source)                          \
+                                     UfoScpoint *source)                        \
 {                                                                               \
     gsize size;                                                                 \
     guint i;                                                                    \
@@ -152,7 +152,7 @@ transfer_positional_argument_##type (UfoGeneralBackprojectTaskPrivate *priv,    
 static void                                                                                                                 \
 set_angular_vector_kernel_argument_##type (UfoGeneralBackprojectTaskPrivate *priv,                                          \
                                            cl_kernel kernel,                                                                \
-                                           UfoPoint *point,                                                                 \
+                                           UfoScpoint *point,                                                               \
                                            gint mem_index,                                                                  \
                                            gint arg_index)                                                                  \
 {                                                                                                                           \
@@ -1298,11 +1298,11 @@ node_setup (UfoGeneralBackprojectTaskPrivate *priv,
 
     /* Initialization */
     /* Assume the most efficient geometry, change if necessary */
-    with_axis = is_axis_parameter (priv->parameter) || !ufo_point_are_almost_zero (priv->geometry->axis->angle);
-    with_volume = is_volume_parameter (priv->parameter) || !ufo_point_are_almost_zero (priv->geometry->volume_angle);
+    with_axis = is_axis_parameter (priv->parameter) || !ufo_scpoint_are_almost_zero (priv->geometry->axis->angle);
+    with_volume = is_volume_parameter (priv->parameter) || !ufo_scpoint_are_almost_zero (priv->geometry->volume_angle);
     perpendicular_detector = !is_detector_rotation_parameter (priv->parameter) &&
                              !is_detector_position_parameter (priv->parameter) &&
-                             ufo_point_are_almost_zero (priv->geometry->detector->angle);
+                             ufo_scpoint_are_almost_zero (priv->geometry->detector->angle);
     parallel_beam = TRUE;
     /* Actual parameter setup */
     for (i = 0; i < priv->num_projections; i++) {

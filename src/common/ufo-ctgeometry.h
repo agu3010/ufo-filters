@@ -27,30 +27,30 @@ typedef struct {
     UfoScarray *x;
     UfoScarray *y;
     UfoScarray *z;
-} UfoPoint;
+} UfoScpoint;
 
 typedef struct {
-    UfoPoint *position;
-    UfoPoint *angle;
-} UfoVector;
+    UfoScpoint *position;
+    UfoScpoint *angle;
+} UfoScvector;
 
 typedef struct {
-    UfoPoint  *source_position;
-    UfoPoint  *volume_angle;
-    UfoVector *axis;
-    UfoVector *detector;
+    UfoScpoint  *source_position;
+    UfoScpoint  *volume_angle;
+    UfoScvector *axis;
+    UfoScvector *detector;
 } UfoCTGeometry;
 
-UfoPoint        *ufo_point_new             (UfoScarray *x,
-                                            UfoScarray *y,
-                                            UfoScarray *z);
-UfoPoint        *ufo_point_copy            (const UfoPoint *point);
-void             ufo_point_free            (UfoPoint *point);
-gboolean         ufo_point_are_almost_zero (UfoPoint *point);
-UfoVector       *ufo_vector_new            (UfoPoint *position,
-                                            UfoPoint *angle);
-void             ufo_vector_free           (UfoVector *vector);
-UfoCTGeometry   *ufo_ctgeometry_new        (void);
-void             ufo_ctgeometry_free       (UfoCTGeometry *geometry);
+UfoScpoint        *ufo_scpoint_new                               (UfoScarray *x,
+                                                                  UfoScarray *y,
+                                                                  UfoScarray *z);
+UfoScpoint        *ufo_scpoint_copy                              (const UfoScpoint *point);
+void               ufo_scpoint_free                              (UfoScpoint *point);
+gboolean           ufo_scpoint_are_almost_zero                   (UfoScpoint *point);
+UfoScvector       *ufo_scvector_new                              (UfoScpoint *position,
+                                                                  UfoScpoint *angle);
+void               ufo_scvector_free                             (UfoScvector *vector);
+UfoCTGeometry     *ufo_ctgeometry_new                            (void);
+void               ufo_ctgeometry_free                           (UfoCTGeometry *geometry);
 
 #endif
