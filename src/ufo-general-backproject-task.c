@@ -1400,6 +1400,8 @@ ufo_general_backproject_task_setup (UfoTask *task,
                                     GError **error)
 {
     cl_int cl_error;
+    guint i;
+    GValue tomo_angle = G_VALUE_INIT;
     UfoGeneralBackprojectTaskPrivate *priv = UFO_GENERAL_BACKPROJECT_TASK_GET_PRIVATE (task);
     priv->resources = g_object_ref (resources);
     priv->kernel = NULL;
@@ -1414,6 +1416,18 @@ ufo_general_backproject_task_setup (UfoTask *task,
         g_set_error (error, UFO_TASK_ERROR, UFO_TASK_ERROR_SETUP,
                      "Number of projections not set");
         return;
+    }
+
+    if (!ufo_scarray_has_n_values (priv->angle, priv->num_projections)) {
+        /* Create equidistant tomographic angles */
+        ufo_scarray_free (priv->angle);
+        priv->angle = ufo_scarray_new (priv->num_projections, G_TYPE_DOUBLE, NULL);
+        g_value_init (&tomo_angle, G_TYPE_DOUBLE);
+        for (i = 0; i < priv->num_projections; i++) {
+            g_value_set_double (&tomo_angle, ((gdouble) i) / priv->num_projections * priv->overall_angle);
+            ufo_scarray_insert (priv->angle, i, &tomo_angle);
+        }
+        g_value_unset (&tomo_angle);
     }
 
     if (priv->gray_map_min >= priv->gray_map_max &&
@@ -1622,13 +1636,9 @@ ufo_general_backproject_task_process (UfoTask *task,
     }
 
     /* Setup tomographic rotation angle dependent arguments */
-    copy_to_image (cmd_queue, inputs[0], priv->projections[index], in_req.dims[0], in_req.dims[1]);
     ki = STATIC_ARG_OFFSET + burst;
-    if (ufo_scarray_has_n_values (priv->angle, priv->num_projections)) {
-        rot_angle = ufo_scarray_get_double (priv->angle, priv->count);
-    } else {
-        rot_angle = ((gdouble) priv->count) / priv->num_projections * priv->overall_angle;
-    }
+    copy_to_image (cmd_queue, inputs[0], priv->projections[index], in_req.dims[0], in_req.dims[1]);
+    rot_angle = ufo_scarray_get_double (priv->angle, priv->count);
     if (priv->compute_type == CT_FLOAT) {
         fill_sincos_cl_float (f_tomo_angle, rot_angle);
         UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (kernel, ki + index, sizeof (cl_float2), f_tomo_angle));
