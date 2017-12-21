@@ -693,22 +693,14 @@ make_args (gint burst, const gchar *fmt)
 static gchar *
 make_type_conversion (const gchar *compute_type, const gchar *store_type)
 {
-    gulong size = 128;
-    gulong written;
-    gchar *code = g_strnfill (size, 0);
+    gchar *code;
     gulong maxval = get_integer_maximum (store_type);
 
     if (maxval) {
-        written = g_snprintf (code, size,
-                              "(%s) clamp ((%s)(gray_limit.y * (norm_factor * result - gray_limit.x)), (%s) 0.0, (%s) %lu.0)",
-                              store_type, compute_type, compute_type, compute_type, maxval);
+        code = g_strdup_printf ("(%s) clamp ((%s)(gray_limit.y * (norm_factor * result - gray_limit.x)), (%s) 0.0, (%s) %lu.0)",
+                                store_type, compute_type, compute_type, compute_type, maxval);
     } else {
-        written = g_snprintf (code, size, "(%s) (norm_factor * result)", store_type);
-    }
-
-    if (written > size) {
-        g_free (code);
-        return NULL;
+        code = g_strdup_printf ("(%s) (norm_factor * result)", store_type);
     }
 
     return code;
@@ -781,24 +773,12 @@ make_parameter_assignment (UfoUniRecoParameter parameter)
 static gchar *
 make_volume_transformation (const gchar *values, const gchar *point, const gchar *suffix)
 {
-    gulong size = 512;
-    gulong written;
-    gchar *code = g_strnfill (size, 0);
-
-    written = g_snprintf (code, size,
-                          "\t%s = rotate_z (%s_z%s, %s);"
-                          "\n\t%s = rotate_y (%s_y%s, %s);"
-                          "\n\t%s = rotate_x (%s_x%s, %s);\n",
-                          point, values, suffix, point,
-                          point, values, suffix, point,
-                          point, values, suffix, point);
-
-    if (written > size) {
-        g_free (code);
-        return NULL;
-    }
-
-    return code;
+    return g_strdup_printf ("\t%s = rotate_z (%s_z%s, %s);"
+                            "\n\t%s = rotate_y (%s_y%s, %s);"
+                            "\n\t%s = rotate_x (%s_x%s, %s);\n",
+                            point, values, suffix, point,
+                            point, values, suffix, point,
+                            point, values, suffix, point);
 }
 
 /**
@@ -829,10 +809,7 @@ make_static_transformations (gboolean vectorized, gboolean with_volume,
         }
     }
     if (!perpendicular_detector) {
-        if ((detector_transformation = make_volume_transformation ("detector_angle", "detector_normal", "[%d]")) == NULL) {
-            g_free (code);
-            return NULL;
-        }
+        detector_transformation = make_volume_transformation ("detector_angle", "detector_normal", "[%d]");
         current = g_stpcpy (current, "\tdetector_normal = (float3)(0.0, -1.0, 0.0);\n");
         current = g_stpcpy (current, detector_transformation);
         current = g_stpcpy (current, "\n\tdetector_offset = -dot (detector_position[%d], detector_normal);\n");
@@ -841,10 +818,7 @@ make_static_transformations (gboolean vectorized, gboolean with_volume,
         current = g_stpcpy (current, "\n\tproject_tmp = detector_position[%d].y - source_position[%d].y;\n");
     }
     if (with_volume) {
-        if ((volume_transformation = make_volume_transformation ("volume_angle", voxel_0, "[%d]")) == NULL) {
-            g_free (code);
-            return NULL;
-        }
+        volume_transformation = make_volume_transformation ("volume_angle", voxel_0, "[%d]");
         current = g_stpcpy (current, volume_transformation);
         g_free (volume_transformation);
     }
@@ -912,7 +886,7 @@ make_transformations (UfoUniRecoParameter parameter, gboolean vectorized, gint b
     gint i;
     size_t written = 0;
     gchar *code_fmt, *code, *current, *volume_transformation, *pretransformation,
-          *str_iteration, *parameter_assignment, *kernel_parameter_name, *tmp, str_index[3];
+          *str_iteration, *parameter_assignment, *kernel_parameter_name, *tmp, *str_index;
     const guint snippet_size = 16384;
     const guint size = burst * snippet_size;
     /* Based on eq. 30 from "Direct cone beam SPECT reconstruction with camera tilt" */
@@ -961,11 +935,7 @@ make_transformations (UfoUniRecoParameter parameter, gboolean vectorized, gint b
 
     if (with_axis) {
         /* Tilted axis of rotation */
-        if ((volume_transformation = make_volume_transformation ("axis_angle", "voxel", "")) == NULL) {
-            g_free (code_fmt);
-            g_free (code);
-            return NULL;
-        }
+        volume_transformation = make_volume_transformation ("axis_angle", "voxel", "");
         current = g_stpcpy (current, volume_transformation);
         current = g_stpcpy (current, "\n");
         g_free (volume_transformation);
@@ -1016,18 +986,12 @@ make_transformations (UfoUniRecoParameter parameter, gboolean vectorized, gint b
     current = code;
     for (i = 0; i < burst; i++) {
         /* %02d would result in octa-based indexing which would crash the kernel for burst > 7  */
-        if (g_snprintf (str_index, 3, "%d", i) > 3) {
-            g_free (code_fmt);
-            g_free (code);
-            return NULL;
-        }
+        str_index = g_strdup_printf ("%d", i);
         tmp = replace_substring (code_fmt, "%d", str_index);
-        if (g_snprintf (str_index, 3, "%02d", i) > 3) {
-            g_free (code_fmt);
-            g_free (code);
-            return NULL;
-        }
+        g_free (str_index);
+        str_index = g_strdup_printf ("%02d", i);
         str_iteration = replace_substring (tmp, "%02d", str_index);
+        g_free (str_index);
         g_free (tmp);
         written += strlen (str_iteration);
         if (written > size) {
@@ -1266,12 +1230,10 @@ node_setup (UfoGeneralBackprojectTaskPrivate *priv,
 {
     guint i;
     gboolean with_axis, with_volume, parallel_beam, perpendicular_detector;
-    gchar *template, *kernel_code;
+    gchar *template, *kernel_code, *compiler_options = NULL;
     const gchar *node_name;
     GValue *node_name_gvalue;
     const gchar compiler_options_tmpl[] = "-cl-nv-maxrregcount=%u";
-    gint compiler_options_length = (gint) (sizeof (compiler_options_tmpl) + 10);
-    gchar *compiler_options = NULL;
     UfoUniRecoNodeProps *node_props;
 
     /* GPU type specific settings */
@@ -1285,11 +1247,7 @@ node_setup (UfoGeneralBackprojectTaskPrivate *priv,
         priv->burst = node_props->burst;
     }
     if (node_props->max_regcount) {
-        compiler_options = g_strnfill (compiler_options_length, 0);
-        if (g_snprintf (compiler_options, compiler_options_length, compiler_options_tmpl,
-                        node_props->max_regcount) > compiler_options_length) {
-            g_warning ("Error creating back projection compiler build options");
-        }
+        compiler_options = g_strdup_printf (compiler_options_tmpl, node_props->max_regcount);
     }
     g_log ("gbp", G_LOG_LEVEL_DEBUG,
            "GPU node %s properties: burst: %u, compiler options: '%s'",
