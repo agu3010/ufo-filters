@@ -25,4 +25,34 @@
 #define UFO_MATH_EPSILON 1e-7
 #define UFO_MATH_ARE_ALMOST_EQUAL(a, b) (ABS ((a) - (b)) < UFO_MATH_EPSILON)
 
+typedef struct {
+    gdouble x, y, z;
+} UfoPoint;
+
+UfoPoint        *ufo_point_new                  (gdouble      x,
+                                                 gdouble      y,
+                                                 gdouble      z);
+void             ufo_point_free                 (UfoPoint    *point);
+void             ufo_point_mul_scalar           (UfoPoint    *point,
+                                                 gdouble      value);
+void             ufo_point_add                  (UfoPoint    *point,
+                                                 UfoPoint    *other);
+void             ufo_point_subtract             (UfoPoint    *point,
+                                                 UfoPoint    *other);
+gdouble          ufo_point_dot_product          (UfoPoint    *point,
+                                                 UfoPoint    *other);
+void             ufo_point_rotate_x             (UfoPoint    *point,
+                                                 gdouble      angle);
+void             ufo_point_rotate_y             (UfoPoint    *point,
+                                                 gdouble      angle);
+void             ufo_point_rotate_z             (UfoPoint    *point,
+                                                 gdouble      angle);
+gdouble          ufo_array_maximum              (gdouble     *array,
+                                                 gint         num_values);
+gdouble          ufo_array_minimum              (gdouble     *array,
+                                                 gint         num_values);
+gdouble          ufo_clip_value                 (gdouble value,
+                                                 gdouble minimum,
+                                                 gdouble maximum);
+
 #endif
