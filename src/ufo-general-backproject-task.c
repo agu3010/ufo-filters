@@ -1305,6 +1305,8 @@ node_setup (UfoGeneralBackprojectTaskPrivate *priv,
                                st_values[priv->store_type].value_nick,
                                priv->parameter);
     if (!kernel_code) {
+        g_free (template);
+        g_free (compiler_options);
         return;
     }
     priv->kernel = ufo_resources_get_kernel_from_source_with_opts (priv->resources,
@@ -1323,6 +1325,8 @@ node_setup (UfoGeneralBackprojectTaskPrivate *priv,
                                    st_values[priv->store_type].value_nick,
                                    priv->parameter);
         if (!kernel_code) {
+            g_free (template);
+            g_free (compiler_options);
             return;
         }
 
@@ -1336,6 +1340,7 @@ node_setup (UfoGeneralBackprojectTaskPrivate *priv,
         g_free (kernel_code);
     }
     g_free (template);
+    g_free (compiler_options);
 
     if (priv->kernel) {
         UFO_RESOURCES_CHECK_CLERR (clRetainKernel (priv->kernel));
