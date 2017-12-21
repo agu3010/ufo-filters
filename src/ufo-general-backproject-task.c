@@ -37,9 +37,9 @@
 #include "common/ufo-addressing.h"
 #include "ufo-general-backproject-task.h"
 
-#define NUM_VECTOR_ARGUMENTS 12
+#define NUM_VECTOR_ARGUMENTS 11
 #define REAL_SIZE_ARG_INDEX 1
-#define STATIC_ARG_OFFSET 19
+#define STATIC_ARG_OFFSET 18
 #define G_LOG_LEVEL_DOMAIN "gbp"
 #define REGION_SIZE(region) ((ufo_scarray_get_int ((region), 2)) == 0) ? 0 : \
                             ((ufo_scarray_get_int ((region), 1) - ufo_scarray_get_int ((region), 0) - 1) /\
@@ -174,11 +174,16 @@ set_static_vector_arguments_##type (UfoGeneralBackprojectTaskPrivate *priv,     
                                                                                                                             \
     priv->vector_arguments = (cl_mem *) g_malloc (NUM_VECTOR_ARGUMENTS * sizeof (cl_mem));                                  \
                                                                                                                             \
-    set_angular_vector_kernel_argument_##type (priv, kernel, priv->geometry->axis->angle, 0, arg_index);                    \
-    set_angular_vector_kernel_argument_##type (priv, kernel, priv->geometry->volume_angle, 3, arg_index + 3);               \
-    set_angular_vector_kernel_argument_##type (priv, kernel, priv->geometry->detector->angle, 6, arg_index + 6);            \
-    mem_index = 9;                                                                                                          \
-    arg_index += 9;                                                                                                         \
+    /* Axis angle has only two vector components, the z one is the tomographic angle with offset set in process () */       \
+    priv->vector_arguments[0] = transfer_angular_argument_##type (priv, priv->geometry->axis->angle->x);                    \
+    UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (kernel, arg_index++, sizeof (cl_mem), &priv->vector_arguments[0]));          \
+    priv->vector_arguments[1] = transfer_angular_argument_##type (priv, priv->geometry->axis->angle->y);                    \
+    UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (kernel, arg_index++, sizeof (cl_mem), &priv->vector_arguments[1]));          \
+                                                                                                                            \
+    set_angular_vector_kernel_argument_##type (priv, kernel, priv->geometry->volume_angle, 2, arg_index);                   \
+    set_angular_vector_kernel_argument_##type (priv, kernel, priv->geometry->detector->angle, 5, arg_index + 3);            \
+    mem_index = 8;                                                                                                          \
+    arg_index += 6;                                                                                                         \
     priv->vector_arguments[mem_index] = transfer_positional_argument_##type (priv, priv->geometry->axis->position);         \
     UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (kernel, arg_index++, sizeof (cl_mem), &priv->vector_arguments[mem_index++]));\
     priv->vector_arguments[mem_index] = transfer_positional_argument_##type (priv, priv->geometry->source_position);        \
@@ -221,7 +226,6 @@ set_static_scalar_arguments_##type (UfoGeneralBackprojectTaskPrivate *priv,     
                                                                                                                             \
     UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (kernel, arg_index++, sizeof (type##2), axis_angle_x));                       \
     UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (kernel, arg_index++, sizeof (type##2), axis_angle_y));                       \
-    UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (kernel, arg_index++, sizeof (type##2), axis_angle_z));                       \
     UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (kernel, arg_index++, sizeof (type##2), volume_angle_x));                     \
     UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (kernel, arg_index++, sizeof (type##2), volume_angle_y));                     \
     UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (kernel, arg_index++, sizeof (type##2), volume_angle_z));                     \
@@ -379,7 +383,7 @@ struct _UfoGeneralBackprojectTaskPrivate {
     /* Properties */
     guint burst;
     gdouble z;
-    UfoScarray *region, *region_x, *region_y, *angle;
+    UfoScarray *region, *region_x, *region_y;
     UfoCTGeometry *geometry;
     ComputeType compute_type, result_type;
     StoreType store_type;
@@ -440,7 +444,6 @@ enum {
     PROP_COMPUTE_TYPE,
     PROP_RESULT_TYPE,
     PROP_STORE_TYPE,
-    PROP_ANGLE,
     PROP_OVERALL_ANGLE,
     PROP_ADDRESSING_MODE,
     PROP_GRAY_MAP_MIN,
@@ -935,7 +938,10 @@ make_transformations (UfoUniRecoParameter parameter, gboolean vectorized, gint b
 
     if (with_axis) {
         /* Tilted axis of rotation */
-        volume_transformation = make_volume_transformation ("axis_angle", "voxel", "");
+        volume_transformation = g_strdup_printf ("\t%s = rotate_y (%s_y%s, %s);\n"
+                                                 "\t%s = rotate_x (%s_x%s, %s);\n",
+                                                 "voxel", "axis_angle", "[%d]", "voxel",
+                                                 "voxel", "axis_angle", "[%d]", "voxel");
         current = g_stpcpy (current, volume_transformation);
         current = g_stpcpy (current, "\n");
         g_free (volume_transformation);
@@ -1256,7 +1262,9 @@ node_setup (UfoGeneralBackprojectTaskPrivate *priv,
 
     /* Initialization */
     /* Assume the most efficient geometry, change if necessary */
-    with_axis = is_axis_parameter (priv->parameter) || !ufo_scpoint_are_almost_zero (priv->geometry->axis->angle);
+    with_axis = is_axis_parameter (priv->parameter) ||
+                !(ufo_scarray_is_almost_zero (priv->geometry->axis->angle->x) &&
+                  ufo_scarray_is_almost_zero (priv->geometry->axis->angle->y));
     with_volume = is_volume_parameter (priv->parameter) || !ufo_scpoint_are_almost_zero (priv->geometry->volume_angle);
     perpendicular_detector = !is_detector_rotation_parameter (priv->parameter) &&
                              !is_detector_position_parameter (priv->parameter) &&
@@ -1268,7 +1276,6 @@ node_setup (UfoGeneralBackprojectTaskPrivate *priv,
     }
     priv->vectorized = (ufo_scarray_has_n_values (priv->geometry->axis->angle->x, priv->num_projections) ||
                         ufo_scarray_has_n_values (priv->geometry->axis->angle->y, priv->num_projections) ||
-                        ufo_scarray_has_n_values (priv->geometry->axis->angle->z, priv->num_projections) ||
                         ufo_scarray_has_n_values (priv->geometry->volume_angle->x, priv->num_projections) ||
                         ufo_scarray_has_n_values (priv->geometry->volume_angle->y, priv->num_projections) ||
                         ufo_scarray_has_n_values (priv->geometry->volume_angle->z, priv->num_projections) ||
@@ -1381,14 +1388,15 @@ ufo_general_backproject_task_setup (UfoTask *task,
         return;
     }
 
-    if (!ufo_scarray_has_n_values (priv->angle, priv->num_projections)) {
-        /* Create equidistant tomographic angles */
-        ufo_scarray_free (priv->angle);
-        priv->angle = ufo_scarray_new (priv->num_projections, G_TYPE_DOUBLE, NULL);
+    if (!ufo_scarray_has_n_values (priv->geometry->axis->angle->z, priv->num_projections)) {
+        /* Create equidistant tomographic angles and treat the one specified in
+         * the current priv->geometry->axis->angle->z as offset */
+        ufo_scarray_free (priv->geometry->axis->angle->z);
+        priv->geometry->axis->angle->z = ufo_scarray_new (priv->num_projections, G_TYPE_DOUBLE, NULL);
         g_value_init (&tomo_angle, G_TYPE_DOUBLE);
         for (i = 0; i < priv->num_projections; i++) {
             g_value_set_double (&tomo_angle, ((gdouble) i) / priv->num_projections * priv->overall_angle);
-            ufo_scarray_insert (priv->angle, i, &tomo_angle);
+            ufo_scarray_insert (priv->geometry->axis->angle->z, i, &tomo_angle);
         }
         g_value_unset (&tomo_angle);
     }
@@ -1601,7 +1609,7 @@ ufo_general_backproject_task_process (UfoTask *task,
     /* Setup tomographic rotation angle dependent arguments */
     ki = STATIC_ARG_OFFSET + burst;
     copy_to_image (cmd_queue, inputs[0], priv->projections[index], in_req.dims[0], in_req.dims[1]);
-    rot_angle = ufo_scarray_get_double (priv->angle, priv->count);
+    rot_angle = ufo_scarray_get_double (priv->geometry->axis->angle->z, priv->count);
     if (priv->compute_type == CT_FLOAT) {
         fill_sincos_cl_float (f_tomo_angle, rot_angle);
         UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (kernel, ki + index, sizeof (cl_float2), f_tomo_angle));
@@ -1773,9 +1781,6 @@ ufo_general_backproject_task_set_property (GObject *object,
         case PROP_STORE_TYPE:
             priv->store_type = g_value_get_enum (value);
             break;
-        case PROP_ANGLE:
-            ufo_scarray_get_value (priv->angle, value);
-            break;
         case PROP_OVERALL_ANGLE:
             priv->overall_angle = g_value_get_double (value);
             break;
@@ -1884,9 +1889,6 @@ ufo_general_backproject_task_get_property (GObject *object,
         case PROP_STORE_TYPE:
             g_value_set_enum (value, priv->store_type);
             break;
-        case PROP_ANGLE:
-            ufo_scarray_set_value (priv->angle, value);
-            break;
         case PROP_OVERALL_ANGLE:
             g_value_set_double (value, priv->overall_angle);
             break;
@@ -1916,7 +1918,6 @@ ufo_general_backproject_task_finalize (GObject *object)
     ufo_scarray_free (priv->region);
     ufo_scarray_free (priv->region_x);
     ufo_scarray_free (priv->region_y);
-    ufo_scarray_free (priv->angle);
     ufo_ctgeometry_free (priv->geometry);
     g_hash_table_destroy (priv->node_props_table);
 
@@ -2211,13 +2212,6 @@ ufo_general_backproject_task_class_init (UfoGeneralBackprojectTaskClass *klass)
             ST_FLOAT,
             G_PARAM_READWRITE);
 
-    properties[PROP_ANGLE] =
-        g_param_spec_value_array ("angle",
-            "Tomographic rotation angles for every processed projection [rad]",
-            "Tomographic rotation angles for every processed projection [rad]",
-            double_region_vals,
-            G_PARAM_READWRITE);
-
     properties[PROP_OVERALL_ANGLE] =
         g_param_spec_double ("overall-angle",
             "Angle covered by all projections [rad]",
@@ -2275,7 +2269,6 @@ ufo_general_backproject_task_init(UfoGeneralBackprojectTask *self)
     self->priv->region = ufo_scarray_new (3, G_TYPE_DOUBLE, NULL);
     self->priv->region_x = ufo_scarray_new (3, G_TYPE_INT, NULL);
     self->priv->region_y = ufo_scarray_new (3, G_TYPE_INT, NULL);
-    self->priv->angle = ufo_scarray_new (1, G_TYPE_DOUBLE, NULL);
     self->priv->geometry = ufo_ctgeometry_new ();
 
     /* Private */
