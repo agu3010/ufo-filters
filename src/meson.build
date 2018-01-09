@@ -137,6 +137,7 @@ shared_module('generalbackproject',
     sources: [
         'ufo-general-backproject-task.c',
         'common/ufo-conebeam.c',
+        'common/ufo-ctgeometry.c',
         'common/ufo-scarray.c',
     ],
     dependencies: deps,
