@@ -23,7 +23,7 @@
         %tmpl%
         // End rotation angle dependent transformation, pixel fetch and slice weighing
 
-        if (cumulate) {
+        if (iteration) {
             volume[idz * real_size.x * real_size.y + idy * real_size.x + idx] += %tmpl%;
         } else {
             volume[idz * real_size.x * real_size.y + idy * real_size.x + idx] = %tmpl%;

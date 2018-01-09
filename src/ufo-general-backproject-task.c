@@ -992,7 +992,7 @@ make_transformations (UfoUniRecoParameter parameter, gboolean vectorized, gint b
     current = code;
     for (i = 0; i < burst; i++) {
         /* %02d would result in octa-based indexing which would crash the kernel for burst > 7  */
-        str_index = g_strdup_printf ("%d", i);
+        str_index = g_strdup_printf ("iteration + %d", i);
         tmp = replace_substring (code_fmt, "%d", str_index);
         g_free (str_index);
         str_index = g_strdup_printf ("%02d", i);
@@ -1492,7 +1492,7 @@ ufo_general_backproject_task_process (UfoTask *task,
     gdouble rot_angle;
     cl_float f_tomo_angle[2];
     cl_double d_tomo_angle[2];
-    cl_int cumulate;
+    cl_int iteration;
     const gsize local_work_size[3] = {16, 8, 8};
     gsize global_work_size[3];
     gint real_size[4];
@@ -1621,8 +1621,8 @@ ufo_general_backproject_task_process (UfoTask *task,
     if (index + 1 == burst) {
         profiler = ufo_task_node_get_profiler (UFO_TASK_NODE (task));
         ki += index + 1;
-        cumulate = priv->count > burst;
-        UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (kernel, ki++, sizeof (cl_int), &cumulate));
+        iteration = (cl_int) (priv->count + 1 - priv->burst);
+        UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (kernel, ki++, sizeof (cl_int), &iteration));
         for (i = 0; i < priv->num_chunks; i++) {
             /* The last chunk might be smaller */
             num_slices_current_chunk = MIN (priv->num_slices,  (i + 1) * priv->num_slices_per_chunk) - i * priv->num_slices_per_chunk;

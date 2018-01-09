@@ -17,6 +17,6 @@ kernel void backproject (const sampler_t sampler,
                          const cfloat norm_factor,
                          const cfloat2 gray_limit,
 %tmpl%%tmpl%
-                         const int cumulate,
+                         const int iteration,
                          global stype *volume,
                          constant cfloat2 *region)
