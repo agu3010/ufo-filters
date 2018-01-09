@@ -137,9 +137,9 @@ transfer_positional_argument_##type (UfoGeneralBackprojectTaskPrivate *priv,    
     }                                                                           \
                                                                                 \
     for (i = 0; i < priv->num_projections; i++) {                               \
-        host_array[2 * i] = (type) ufo_scarray_get_double (source->x, i);       \
-        host_array[2 * i + 1] = (type) ufo_scarray_get_double (source->y, i);   \
-        host_array[2 * i + 2] = (type) ufo_scarray_get_double (source->z, i);   \
+        host_array[4 * i] = (type) ufo_scarray_get_double (source->x, i);       \
+        host_array[4 * i + 1] = (type) ufo_scarray_get_double (source->y, i);   \
+        host_array[4 * i + 2] = (type) ufo_scarray_get_double (source->z, i);   \
     }                                                                           \
                                                                                 \
     device_array = transfer_host_to_device (priv->context, host_array, size);   \
