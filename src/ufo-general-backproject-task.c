@@ -1519,12 +1519,12 @@ ufo_general_backproject_task_process (UfoTask *task,
     if (priv->count >= priv->num_projections / priv->burst * priv->burst) {
         kernel = priv->rest_kernel;
         burst = priv->num_projections % priv->burst;
+        index = (priv->count - priv->num_projections / priv->burst * priv->burst) % burst;
     } else {
         kernel = priv->kernel;
         burst = priv->burst;
+        index = priv->count % burst;
     }
-
-    index = priv->count % burst;
 
     if (!priv->chunks) {
         if (UFO_MATH_ARE_ALMOST_EQUAL (ufo_scarray_get_double (priv->region, 2), 0)) {
