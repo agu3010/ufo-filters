@@ -1621,7 +1621,7 @@ ufo_general_backproject_task_process (UfoTask *task,
     if (index + 1 == burst) {
         profiler = ufo_task_node_get_profiler (UFO_TASK_NODE (task));
         ki += index + 1;
-        iteration = (cl_int) (priv->count + 1 - priv->burst);
+        iteration = (cl_int) (priv->count + 1 - burst);
         UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (kernel, ki++, sizeof (cl_int), &iteration));
         for (i = 0; i < priv->num_chunks; i++) {
             /* The last chunk might be smaller */
