@@ -1209,24 +1209,29 @@ DEFINE_COMPUTE_SLICE_REGION (cl_double)
 DEFINE_SET_STATIC_ARGS (cl_float)
 DEFINE_SET_STATIC_ARGS (cl_double)
 
+/**
+ * Copy buffer to OpenCL image.
+ * @extrema: (in): x0, x1, y0, y1 specifying the region to copy.
+ */
 static void
 copy_to_image (const cl_command_queue cmd_queue,
                UfoBuffer *input,
                cl_mem output,
                guint width,
-               guint height)
+               gint extrema[4])
 {
     cl_event event;
     cl_int errcode;
     cl_mem input_array;
-    const size_t origin[] = {0, 0, 0};
-    const size_t region[] = {width, height, 1};
+    const size_t origin[] = {extrema[0], extrema[2], 0};
+    const size_t region[] = {extrema[1] - extrema[0], extrema[3] - extrema[2], 1};
+    size_t src_offset = sizeof (float) * (extrema[2] * width + extrema[0]);
 
     input_array = ufo_buffer_get_device_array (input, cmd_queue);
     errcode = clEnqueueCopyBufferToImage (cmd_queue,
                                           input_array,
                                           output,
-                                          0, origin, region,
+                                          src_offset, origin, region,
                                           0, NULL, &event);
 
     UFO_RESOURCES_CHECK_CLERR (errcode);
@@ -1488,6 +1493,7 @@ ufo_general_backproject_task_process (UfoTask *task,
     guint burst, num_slices_current_chunk;
     gsize slice_size, chunk_size, volume_size, projections_size;
     gdouble region_start, region_stop, region_step;
+    cl_double region_x[2], region_y[2];
     cl_int cl_error;
     GValue *max_global_mem_size_gvalue, *max_mem_alloc_size_gvalue;
     cl_ulong max_global_mem_size, max_mem_alloc_size;
@@ -1499,7 +1505,7 @@ ufo_general_backproject_task_process (UfoTask *task,
     cl_int iteration;
     const gsize local_work_size[3] = {16, 8, 8};
     gsize global_work_size[3];
-    gint real_size[4];
+    gint real_size[4], *extrema;
     typedef void (*CreateRegionFunc) (UfoGeneralBackprojectTaskPrivate *, const cl_command_queue,
                                       const gdouble, const gdouble);
     typedef void (*SetStaticArgsFunc) (UfoGeneralBackprojectTaskPrivate *, UfoRequisition *, const cl_kernel);
@@ -1612,7 +1618,6 @@ ufo_general_backproject_task_process (UfoTask *task,
 
     /* Setup tomographic rotation angle dependent arguments */
     ki = STATIC_ARG_OFFSET + burst;
-    copy_to_image (cmd_queue, inputs[0], priv->projections[index], in_req.dims[0], in_req.dims[1]);
     rot_angle = ufo_scarray_get_double (priv->geometry->axis->angle->z, priv->count);
     if (priv->compute_type == CT_FLOAT) {
         fill_sincos_cl_float (f_tomo_angle, rot_angle);
@@ -1621,6 +1626,15 @@ ufo_general_backproject_task_process (UfoTask *task,
         fill_sincos_cl_double (d_tomo_angle, rot_angle);
         UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (kernel, ki + index, sizeof (cl_double2), d_tomo_angle));
     }
+    /* Compute projection region which needs to be copied */
+    compute_slice_region_cl_double (priv, requisition->dims[0], priv->region_x, region_x);
+    compute_slice_region_cl_double (priv, requisition->dims[1], priv->region_y, region_y);
+    region_x[1] = region_x[0] + requisition->dims[0] * region_x[1];
+    region_y[1] = region_y[0] + requisition->dims[1] * region_y[1];
+    extrema = ufo_ctgeometry_compute_projection_region (priv->geometry, (gdouble) region_x[0], (gdouble) region_x[1],
+                                                        (gdouble) region_y[0], (gdouble) region_y[1], in_req.dims[0],
+                                                        in_req.dims[1], priv->z, priv->count, priv->parameter, priv->region);
+    copy_to_image (cmd_queue, inputs[0], priv->projections[index], in_req.dims[0], extrema);
 
     if (index + 1 == burst) {
         profiler = ufo_task_node_get_profiler (UFO_TASK_NODE (task));
@@ -1638,6 +1652,7 @@ ufo_general_backproject_task_process (UfoTask *task,
         }
     }
 
+    g_free (extrema);
     priv->count++;
 
     return TRUE;
