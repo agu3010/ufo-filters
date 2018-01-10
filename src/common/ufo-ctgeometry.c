@@ -303,7 +303,7 @@ compute_slice_region (UfoCTGeometry *geometry, gdouble x_min, gdouble x_max, gdo
     return extrema;
 }
 
-void
+gint *
 ufo_ctgeometry_compute_projection_region (UfoCTGeometry *geometry, gdouble x_min, gdouble x_max,
                                           gdouble y_min, gdouble y_max, gsize proj_width,
                                           gsize proj_height, gdouble z, guint iteration,
@@ -327,6 +327,7 @@ ufo_ctgeometry_compute_projection_region (UfoCTGeometry *geometry, gdouble x_min
     g_message ("Final extrema: %d-%d, %d-%d", extrema_0[0], extrema_0[1], extrema_0[2], extrema_0[3]);
     /* g_message ("%u: %lu x %lu, %g-%g, %g-%g, %d", iteration, proj_width, proj_height, x_min, x_max, y_min, y_max, parameter); */
     /* g_message ("%g %g %g", ufo_scarray_get_double (region, 0), ufo_scarray_get_double (region, 1), ufo_scarray_get_double (region, 2)); */
-    g_free (extrema_0);
     g_free (extrema_1);
+
+    return extrema_0;
 }

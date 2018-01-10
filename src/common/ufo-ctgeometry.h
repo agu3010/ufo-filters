@@ -53,7 +53,7 @@ UfoScvector       *ufo_scvector_new                              (UfoScpoint *po
 void               ufo_scvector_free                             (UfoScvector *vector);
 UfoCTGeometry     *ufo_ctgeometry_new                            (void);
 void               ufo_ctgeometry_free                           (UfoCTGeometry *geometry);
-void               ufo_ctgeometry_compute_projection_region      (UfoCTGeometry *geometry, gdouble x_min, gdouble x_max,
+gint              *ufo_ctgeometry_compute_projection_region      (UfoCTGeometry *geometry, gdouble x_min, gdouble x_max,
                                                                   gdouble y_min, gdouble y_max, gsize proj_width,
                                                                   gsize proj_height, gdouble z, guint iteration,
                                                                   UfoUniRecoParameter parameter, UfoScarray *region);
