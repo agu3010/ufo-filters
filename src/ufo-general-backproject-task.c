@@ -802,7 +802,11 @@ make_static_transformations (gboolean vectorized, gboolean with_volume,
     gchar *detector_transformation, *volume_transformation;
     const gchar *voxel_0 = vectorized ? "voxel" : "voxel_0";
 
-    if (!parallel_beam) {
+    if (parallel_beam) {
+        if (vectorized) {
+            current = g_stpcpy (current,"\tvoxel = voxel_0;\n");
+        }
+    } else {
         if (vectorized) {
             current = g_stpcpy (current, "\t// Magnification\n\tvoxel = voxel_0 * -native_divide(source_position[%d].y, "
                                 "(detector_position[%d].y - source_position[%d].y));\n");
