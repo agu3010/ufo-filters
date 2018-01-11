@@ -310,10 +310,10 @@ ufo_cone_beam_projection_weight_task_init(UfoConeBeamProjectionWeightTask *self)
 {
     self->priv = UFO_CONE_BEAM_PROJECTION_WEIGHT_TASK_GET_PRIVATE(self);
 
-    self->priv->center_x = ufo_scarray_new (0, G_TYPE_DOUBLE, NULL);
-    self->priv->center_z = ufo_scarray_new (0, G_TYPE_DOUBLE, NULL);
-    self->priv->source_distance = ufo_scarray_new (0, G_TYPE_DOUBLE, NULL);
-    self->priv->detector_distance = ufo_scarray_new (0, G_TYPE_DOUBLE, NULL);
-    self->priv->axis_angle_x = ufo_scarray_new (1, G_TYPE_DOUBLE, NULL);
+    self->priv->center_x = ufo_scarray_new (0, G_TYPE_FLOAT, NULL);
+    self->priv->center_z = ufo_scarray_new (0, G_TYPE_FLOAT, NULL);
+    self->priv->source_distance = ufo_scarray_new (0, G_TYPE_FLOAT, NULL);
+    self->priv->detector_distance = ufo_scarray_new (0, G_TYPE_FLOAT, NULL);
+    self->priv->axis_angle_x = ufo_scarray_new (1, G_TYPE_FLOAT, NULL);
     self->priv->count = 0;
 }
