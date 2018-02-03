@@ -1223,9 +1223,9 @@ copy_to_image (const cl_command_queue cmd_queue,
     cl_event event;
     cl_int errcode;
     cl_mem input_array;
-    const size_t origin[] = {extrema[0], extrema[2], 0};
-    const size_t region[] = {extrema[1] - extrema[0], extrema[3] - extrema[2], 1};
-    size_t src_offset = sizeof (float) * (extrema[2] * width + extrema[0]);
+    const size_t origin[] = {0, extrema[2], 0};
+    const size_t region[] = {width, extrema[3] - extrema[2], 1};
+    size_t src_offset = sizeof (float) * extrema[2] * width;
 
     input_array = ufo_buffer_get_device_array (input, cmd_queue);
     errcode = clEnqueueCopyBufferToImage (cmd_queue,
